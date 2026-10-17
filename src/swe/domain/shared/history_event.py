@@ -1,7 +1,5 @@
 from typing import ClassVar
 
-from pydantic import computed_field
-
 from swe.domain.shared.base import Record
 
 
@@ -10,7 +8,8 @@ from swe.domain.shared.base import Record
 # and the payload (EventBridge `detail`) emitted for it.
 #
 # Subclasses register themselves by their event_type, so adding an event is just
-# defining the class: e.g. `event_type: Literal["quote_issued"] = "quote_issued"`
+# defining the class: e.g. `event_type: Literal["quote_issued"] = "quote_issued"`.
+# Each action raises exactly one event; anything else it did goes in that event's fields
 class HistoryEvent(Record):
     registry: ClassVar[dict[str, type["HistoryEvent"]]] = {}
     TYPE: ClassVar[str]
@@ -25,17 +24,6 @@ class HistoryEvent(Record):
             raise TypeError(f"event_type {event_type!r} is already used by {HistoryEvent.registry[event_type].__name__}")
         cls.TYPE = event_type
         HistoryEvent.registry[event_type] = cls
-
-    @computed_field
-    @property
-    def pk(self) -> str:
-        return f"REQUEST#{self.request_id}"
-
-    # timestamp first so events sort chronologically
-    @computed_field
-    @property
-    def sk(self) -> str:
-        return f"EVENT#{self.created_at.isoformat()}#{self.id}"
 
 
 # builds the right subclass from a stored item or an emitted payload

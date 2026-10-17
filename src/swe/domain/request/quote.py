@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from swe.domain.job.delivery_job import DeliveryJob
 from swe.domain.shared.errors import DomainError
@@ -29,7 +29,7 @@ class Quote(BaseModel):
     time_of_issue: datetime = Field(default_factory = now, frozen = True)
     expiry_time: datetime = Field(frozen = True)
     issued_by: str = Field(frozen = True)
-    status: QuoteStatus = QuoteStatus.PENDING
+    status: QuoteStatus = QuoteStatus.PENDING # never returns to an earlier value, so the repo locks on it
     responded_by: str | None = None
     responded_at: datetime | None = None
 
@@ -39,17 +39,6 @@ class Quote(BaseModel):
         if window[1] <= window[0]:
             raise ValueError("window must end after it starts")
         return window
-
-    # quotes live in their request's partition
-    @computed_field
-    @property
-    def pk(self) -> str:
-        return f"REQUEST#{self.request_id}"
-
-    @computed_field
-    @property
-    def sk(self) -> str:
-        return f"QUOTE#{self.quote_id}"
 
     def is_expired(self, at: datetime) -> bool:
         return at >= self.expiry_time

@@ -21,12 +21,7 @@ class QuoteIssued(HistoryEvent):
     quote_id: str
     price: Decimal
     expiry_time: datetime
-
-
-class QuoteSuperseded(HistoryEvent):
-    event_type: Literal["quote_superseded"] = "quote_superseded"
-    quote_id: str
-    superseded_by: str
+    supersedes: str | None = None # the quote this one replaced, if any (A6)
 
 
 class QuoteAccepted(HistoryEvent):

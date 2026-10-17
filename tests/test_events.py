@@ -3,7 +3,6 @@ from datetime import timedelta
 from decimal import Decimal
 
 import pytest
-from boto3.dynamodb.types import TypeSerializer
 
 from swe.domain.request import DeliveryRequest, QuoteAccepted, QuoteIssued, RequestLogged
 from swe.domain.shared import HistoryEvent, parse_history_event
@@ -11,6 +10,7 @@ from swe.domain.shared.ids import now
 from swe.events.handling import handles
 from swe.events.routes import ROUTES
 from swe.events.stream_publisher import to_event
+from swe.repo.schemas import schema_for
 
 DETAILS = dict(
     customer_id = "cust-1", contact_name = "Sam", contact_phone = "0400000000",
@@ -29,16 +29,12 @@ def accepted_flow():
         eta_dropoff = (t + timedelta(hours = 4), t + timedelta(hours = 6)),
     )
     job, accepted = request.accept_quote(quote, by = "cust-1")
-    return logged, issued[-1], accepted, job
+    return logged, issued, accepted, job
 
 
 # what DynamoDB stores, then hands back on the stream
 def stream_record(event) -> dict:
-    serializer = TypeSerializer()
-    item = event.model_dump(mode = "json")
-    item["price"] = Decimal(item["price"]) if "price" in item else None
-    item = {k: v for k, v in item.items() if v is not None}
-    return {"eventName": "INSERT", "dynamodb": {"NewImage": {k: serializer.serialize(v) for k, v in item.items()}}}
+    return {"eventName": "INSERT", "dynamodb": {"NewImage": schema_for(event).to_item(event)}}
 
 
 # what EventBridge invokes a handler Lambda with

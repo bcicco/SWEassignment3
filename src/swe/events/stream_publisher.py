@@ -2,34 +2,31 @@
 # If publishing fails the whole batch is retried, so events are at-least-once.
 import logging
 
-from boto3.dynamodb.types import TypeDeserializer
-
-from swe.domain.shared import parse_history_event
 from swe.infra.aws import client
 from swe.infra.config import EVENT_BUS_NAME, EVENT_SOURCE
+from swe.repo.schemas import event_schema_for
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
-deserializer = TypeDeserializer()
 
 
 def to_event(record: dict) -> dict | None:
     # only appended history events are domain events; everything else is state
     if record["eventName"] != "INSERT":
         return None
-    image = {k: deserializer.deserialize(v) for k, v in record["dynamodb"]["NewImage"].items()}
-    if not image["sk"].startswith("EVENT#"):
+    item = record["dynamodb"]["NewImage"]
+    if not item["sk"]["S"].startswith("EVENT#"):
         return None
     try:
-        event = parse_history_event(image)
+        event = event_schema_for(item).from_item(item)
     except ValueError: # includes pydantic ValidationError
         # skip rather than block the shard; the item is still in the table to fix and replay
-        log.exception("unparseable history event %s %s", image["pk"], image["sk"])
+        log.exception("unreadable history event %s %s", item["pk"]["S"], item["sk"]["S"])
         return None
     return {
         "Source": EVENT_SOURCE,
         "DetailType": event.event_type,
-        "Detail": event.model_dump_json(exclude = {"pk", "sk"}),
+        "Detail": event.model_dump_json(),
         "EventBusName": EVENT_BUS_NAME,
     }
 

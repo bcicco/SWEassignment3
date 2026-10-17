@@ -5,7 +5,6 @@ from swe.domain.request.events import (
     QuoteIssued,
     QuoteRejected,
     QuoteRevisionRequested,
-    QuoteSuperseded,
     RequestCancelled,
     RequestLogged,
 )

@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field
 
 from swe.domain.shared.ids import new_id, now
 
@@ -23,13 +23,3 @@ class DeliveryJob(BaseModel):
     quote_id: str = Field(frozen = True)
     created_at: datetime = Field(default_factory = now, frozen = True)
     state: JobStateName = JobStateName.UNALLOCATED
-
-    @computed_field
-    @property
-    def pk(self) -> str:
-        return f"JOB#{self.job_id}"
-
-    @computed_field
-    @property
-    def sk(self) -> str:
-        return "METADATA"

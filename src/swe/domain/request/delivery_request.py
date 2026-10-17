@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from swe.domain.job.delivery_job import DeliveryJob
 from swe.domain.request.events import (
@@ -10,7 +10,6 @@ from swe.domain.request.events import (
     QuoteIssued,
     QuoteRejected,
     QuoteRevisionRequested,
-    QuoteSuperseded,
     RequestCancelled,
     RequestLogged,
 )
@@ -18,7 +17,6 @@ from swe.domain.request.quote import Quote, QuoteStatus
 from swe.domain.shared.address import Address
 from swe.domain.shared.parcel import Parcel
 from swe.domain.shared.errors import DomainError
-from swe.domain.shared.history_event import HistoryEvent
 from swe.domain.shared.ids import new_id, now
 
 
@@ -41,24 +39,14 @@ class DeliveryRequest(BaseModel):
     parcels: list[Parcel] = Field(min_length = 1, frozen = True) # A5
     pickup_address: Address = Field(frozen = True)
     dropoff_address: Address = Field(frozen = True)
-    status: RequestStatus = RequestStatus.OPEN
-    current_quote_id: str | None = None # A6: at most one live quote
+    status: RequestStatus = RequestStatus.OPEN # only moves forward, so the repo locks on it
+    current_quote_id: str | None = None # A6: at most one live quote; a new id each time
 
     @model_validator(mode = "after")
     def _addresses_differ(self) -> "DeliveryRequest":
         if self.pickup_address == self.dropoff_address:
             raise ValueError("pickup and dropoff addresses must differ")
         return self
-
-    @computed_field
-    @property
-    def pk(self) -> str:
-        return f"REQUEST#{self.request_id}"
-
-    @computed_field
-    @property
-    def sk(self) -> str:
-        return "METADATA"
 
     @classmethod
     def log(cls, **details) -> tuple["DeliveryRequest", RequestLogged]:
@@ -91,7 +79,7 @@ class DeliveryRequest(BaseModel):
         issued_by: str,
         previous: Quote | None,
         at: datetime | None = None,
-    ) -> tuple[Quote, list[HistoryEvent]]:
+    ) -> tuple[Quote, QuoteIssued]:
         at = at or now()
         self._ensure_open()
         if self.current_quote_id is not None:
@@ -108,19 +96,18 @@ class DeliveryRequest(BaseModel):
             expiry_time = at + valid_for,
             issued_by = issued_by,
         )
-        events = []
         if previous is not None:
             previous.supersede()
-            events.append(QuoteSuperseded(
-                request_id = self.request_id, quote_id = previous.quote_id, superseded_by = quote.quote_id,
-                created_by = issued_by, created_at = at,
-            ))
         self.current_quote_id = quote.quote_id
-        events.append(QuoteIssued(
-            request_id = self.request_id, quote_id = quote.quote_id, price = quote.price, expiry_time = quote.expiry_time,
-            created_by = issued_by, created_at = at,
-        ))
-        return quote, events
+        return quote, QuoteIssued(
+            request_id = self.request_id,
+            quote_id = quote.quote_id,
+            price = quote.price,
+            expiry_time = quote.expiry_time,
+            supersedes = previous.quote_id if previous else None,
+            created_by = issued_by,
+            created_at = at,
+        )
 
     def accept_quote(self, quote: Quote, by: str, at: datetime | None = None) -> tuple[DeliveryJob, QuoteAccepted]:
         at = at or now()

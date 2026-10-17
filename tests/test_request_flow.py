@@ -10,7 +10,6 @@ from swe.domain.request import (
     QuoteAccepted,
     QuoteIssued,
     QuoteStatus,
-    QuoteSuperseded,
     RequestLogged,
     RequestStatus,
 )
@@ -48,8 +47,7 @@ def request_():
 def test_log_produces_event():
     request, event = DeliveryRequest.log(**DETAILS)
     assert isinstance(event, RequestLogged)
-    assert event.pk == request.pk == f"REQUEST#{request.request_id}"
-    assert event.sk.startswith("EVENT#")
+    assert event.request_id == request.request_id
 
 
 @pytest.mark.parametrize("override", [
@@ -69,9 +67,10 @@ def test_invalid_quote_leaves_request_unchanged(request_):
 
 
 def test_revision_supersedes_previous(request_):
-    q1, _ = request_.issue_quote(**quote_args(), previous = None)
-    q2, events = request_.issue_quote(**quote_args(price = Decimal("45")), previous = q1)
-    assert [type(e) for e in events] == [QuoteSuperseded, QuoteIssued]
+    q1, first = request_.issue_quote(**quote_args(), previous = None)
+    assert first.supersedes is None
+    q2, issued = request_.issue_quote(**quote_args(price = Decimal("45")), previous = q1)
+    assert isinstance(issued, QuoteIssued) and issued.supersedes == q1.quote_id
     assert q1.status is QuoteStatus.SUPERSEDED
     assert request_.current_quote_id == q2.quote_id
 
@@ -119,3 +118,4 @@ def test_issued_terms_are_frozen(request_):
     quote, _ = request_.issue_quote(**quote_args(), previous = None)
     with pytest.raises(ValidationError):
         quote.price = Decimal("1")
+
