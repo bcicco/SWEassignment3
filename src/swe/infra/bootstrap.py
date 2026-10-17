@@ -7,7 +7,8 @@ from swe.infra import package
 from swe.infra.aws import client
 from swe.infra.config import EVENT_BUS_NAME, EVENT_SOURCE, TABLE_NAME
 
-ROLE_NAME = "yowd-lambda"
+# Lambda requires a role, but LocalStack doesn't enforce IAM, so it needn't exist
+ROLE_ARN = "arn:aws:iam::000000000000:role/yowd-lambda"
 STREAM_FUNCTION = "yowd-stream-publisher"
 RUNTIME = f"python{package.RUNTIME_PYTHON}"
 
@@ -36,37 +37,11 @@ def create_bus(events) -> None:
         events.create_event_bus(Name = EVENT_BUS_NAME)
 
 
-# LocalStack doesn't enforce IAM, but real AWS needs these permissions
-def create_role(iam) -> str:
-    try:
-        return iam.get_role(RoleName = ROLE_NAME)["Role"]["Arn"]
-    except iam.exceptions.NoSuchEntityException:
-        pass
-    arn = iam.create_role(
-        RoleName = ROLE_NAME,
-        AssumeRolePolicyDocument = json.dumps({
-            "Version": "2012-10-17",
-            "Statement": [{"Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}],
-        }),
-    )["Role"]["Arn"]
-    for policy in ["AWSLambdaBasicExecutionRole", "AWSLambdaDynamoDBExecutionRole"]:
-        iam.attach_role_policy(RoleName = ROLE_NAME, PolicyArn = f"arn:aws:iam::aws:policy/service-role/{policy}")
-    iam.put_role_policy(
-        RoleName = ROLE_NAME,
-        PolicyName = "put-events",
-        PolicyDocument = json.dumps({
-            "Version": "2012-10-17",
-            "Statement": [{"Effect": "Allow", "Action": "events:PutEvents", "Resource": "*"}],
-        }),
-    )
-    return arn
-
-
-def deploy_function(lambda_, name: str, handler: str, code: bytes, role_arn: str) -> str:
+def deploy_function(lambda_, name: str, handler: str, code: bytes) -> str:
     config = dict(
         Runtime = RUNTIME,
         Handler = handler,
-        Role = role_arn,
+        Role = ROLE_ARN,
         Timeout = 30,
         MemorySize = 256,
         Environment = {"Variables": {"TABLE_NAME": TABLE_NAME, "EVENT_BUS_NAME": EVENT_BUS_NAME}},
@@ -103,34 +78,26 @@ def connect_stream(lambda_, stream_arn: str) -> None:
     )
 
 
-def create_route(events, lambda_, route: str, function_arn: str) -> None:
+def create_route(events, route: str, function_arn: str) -> None:
     name = function_name(route)
     pattern = {"source": [EVENT_SOURCE]}
     if ROUTES[route].event_types:
         pattern["detail-type"] = ROUTES[route].event_types
-    rule_arn = events.put_rule(Name = name, EventBusName = EVENT_BUS_NAME, EventPattern = json.dumps(pattern))["RuleArn"]
+    events.put_rule(Name = name, EventBusName = EVENT_BUS_NAME, EventPattern = json.dumps(pattern))
     events.put_targets(Rule = name, EventBusName = EVENT_BUS_NAME, Targets = [{"Id": name, "Arn": function_arn}])
-    try:
-        lambda_.add_permission(
-            FunctionName = name, StatementId = "eventbridge-invoke", Action = "lambda:InvokeFunction",
-            Principal = "events.amazonaws.com", SourceArn = rule_arn,
-        )
-    except lambda_.exceptions.ResourceConflictException:
-        pass # already granted
 
 
 def main() -> None:
     lambda_, events = client("lambda"), client("events")
     stream_arn = create_table(client("dynamodb"))
     create_bus(events)
-    role_arn = create_role(client("iam"))
     code = package.build()
 
-    deploy_function(lambda_, STREAM_FUNCTION, "swe.events.stream_publisher.handler", code, role_arn)
+    deploy_function(lambda_, STREAM_FUNCTION, "swe.events.stream_publisher.handler", code)
     connect_stream(lambda_, stream_arn)
     for route in ROUTES:
-        arn = deploy_function(lambda_, function_name(route), handler_path(route), code, role_arn)
-        create_route(events, lambda_, route, arn)
+        arn = deploy_function(lambda_, function_name(route), handler_path(route), code)
+        create_route(events, route, arn)
     print(f"deployed {STREAM_FUNCTION} and routes {list(ROUTES)} on bus {EVENT_BUS_NAME}")
 
 

@@ -4,7 +4,7 @@ services:
     ports:
       - "4566:4566"
     environment:
-      - SERVICES=dynamodb,dynamodbstreams,events,lambda,iam,logs
+      - SERVICES=dynamodb,dynamodbstreams,events,lambda,logs
       - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:-}
     volumes:
       # LocalStack runs each Lambda in its own container
