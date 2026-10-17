@@ -7,7 +7,9 @@ authors = [
     { name = "ben-matilda", email = "ben@matildamigration.com" }
 ]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pydantic",
+]
 
 [project.scripts]
 swe = "swe:main"
