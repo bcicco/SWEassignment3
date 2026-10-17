@@ -5,13 +5,15 @@ from typing import TypeVar
 from pydantic import BaseModel
 
 from swe.domain.job import DeliveryJob
-from swe.domain.request import DeliveryRequest, Quote
+from swe.domain.request import DeliveryRequest, Quote, RequestStatus
+from swe.domain.shared import HistoryEvent
 from swe.infra.aws import client
 from swe.infra.config import TABLE_NAME
-from swe.repo.schema import ItemSchema
-from swe.repo.schemas import schema_for
+from swe.repo.schema import Index, ItemSchema
+from swe.repo.schemas import event_schema_for, schema_for
 from swe.repo.schemas.job import DELIVERY_JOB
-from swe.repo.schemas.request import DELIVERY_REQUEST, QUOTE
+from swe.repo.schemas.request import BY_CUSTOMER, BY_STATUS, DELIVERY_REQUEST, QUOTE
+from swe.repo.schemas.shared import HISTORY_EVENT
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -51,12 +53,20 @@ class Transaction:
         unknown = set(fields) - set(schema.attributes)
         if unknown:
             raise ValueError(f"{type(model).__name__} has no fields {sorted(unknown)}")
-        sets = {f: getattr(model, f) for f in fields if getattr(model, f) is not None}
+        sets = {f: schema.encode(f, getattr(model, f)) for f in fields if getattr(model, f) is not None}
         removes = [f for f in fields if getattr(model, f) is None]  # None values aren't stored
+        # an index whose key uses a changed field is rewritten with it, e.g. by_status on cancel
+        for index in schema.indexes:
+            if index.fields & set(fields):
+                index_key = schema.index_key_of(index, model)
+                if index_key:
+                    sets |= index_key
+                else:
+                    removes += [index.pk_attribute, index.sk_attribute]
         expected = where or {}
 
         names = {f"#{k}": k for k in [*sets, *removes, *expected]}  # e.g. "status" is a reserved word
-        values = {f":new_{k}": schema.encode(k, v) for k, v in sets.items()}
+        values = {f":new_{k}": v for k, v in sets.items()}
         values |= {f":was_{k}": schema.encode(k, v) for k, v in expected.items() if v is not None}
         update = " ".join(
             filter(
@@ -117,6 +127,45 @@ class Repository:
 
     def get_job(self, job_id: str) -> DeliveryJob:
         return self._get(DELIVERY_JOB, job_id=job_id)
+
+    # the items in a request's partition whose sort key starts with the schema's prefix
+    def _query_partition(self, request_id: str, schema: ItemSchema) -> list[dict]:
+        pages = self._dynamodb.get_paginator("query").paginate(
+            TableName=self._table,
+            KeyConditionExpression="pk = :pk AND begins_with(sk, :prefix)",
+            ExpressionAttributeValues={
+                ":pk": DELIVERY_REQUEST.key(request_id=request_id)["pk"],
+                ":prefix": {"S": schema.sk_prefix},
+            },
+            ConsistentRead=True,
+        )
+        return [item for page in pages for item in page["Items"]]
+
+    def list_quotes(self, request_id: str) -> list[Quote]:
+        return [QUOTE.from_item(item) for item in self._query_partition(request_id, QUOTE)]
+
+    # oldest first, since event sort keys lead with the timestamp
+    def get_history(self, request_id: str) -> list[HistoryEvent]:
+        return [event_schema_for(item).from_item(item) for item in self._query_partition(request_id, HISTORY_EVENT)]
+
+    # newest first. Index reads can't be strongly consistent, so a request may take a
+    # moment to appear here after it's logged; get_request always sees it
+    def _query_index(self, index: Index, **values) -> list[dict]:
+        pages = self._dynamodb.get_paginator("query").paginate(
+            TableName=self._table,
+            IndexName=index.name,
+            KeyConditionExpression="#pk = :pk",
+            ExpressionAttributeNames={"#pk": index.pk_attribute},
+            ExpressionAttributeValues={":pk": {"S": index.pk.format(**values)}},
+            ScanIndexForward=False,
+        )
+        return [item for page in pages for item in page["Items"]]
+
+    def list_customer_requests(self, customer_id: str) -> list[DeliveryRequest]:
+        return [DELIVERY_REQUEST.from_item(i) for i in self._query_index(BY_CUSTOMER, customer_id=customer_id)]
+
+    def list_requests_by_status(self, status: RequestStatus) -> list[DeliveryRequest]:
+        return [DELIVERY_REQUEST.from_item(i) for i in self._query_index(BY_STATUS, status=status)]
 
     def transaction(self) -> Transaction:
         return Transaction(self._dynamodb, self._table)

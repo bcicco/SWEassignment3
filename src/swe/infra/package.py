@@ -20,7 +20,7 @@ def build() -> bytes:
     BUILD.mkdir(parents=True)
     requirements = BUILD.parent / "requirements.txt"
     subprocess.run(
-        ["uv", "export", "--no-dev", "--no-hashes", "--no-emit-project", "--quiet", "-o", str(requirements)]
+        ["uv", "export", "--no-default-groups", "--no-hashes", "--no-emit-project", "--quiet", "-o", str(requirements)]
         + [arg for pkg in PROVIDED_BY_RUNTIME for arg in ("--no-emit-package", pkg)],
         cwd=ROOT,
         check=True,

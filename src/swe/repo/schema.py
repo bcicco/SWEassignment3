@@ -3,6 +3,7 @@
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum as _Enum
+from string import Formatter
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel
@@ -145,30 +146,69 @@ class List(Codec):
         return [self.codec.decode(v) for v in attribute["L"]]
 
 
+# A global secondary index over a stored type. pk and sk are templates like the table's,
+# stored as their own attributes ("<name>_pk", "<name>_sk"). Items missing any value the
+# templates use are left out of the index, so e.g. anonymous requests have no customer entry
+class Index:
+    def __init__(self, name: str, *, pk: str, sk: str):
+        self.name, self.pk, self.sk = name, pk, sk
+        self.pk_attribute, self.sk_attribute = f"{name}_pk", f"{name}_sk"
+        self.fields = {field for template in (pk, sk) for _, field, _, _ in Formatter().parse(template) if field}
+
+    def key(self, **values) -> dict:
+        return {self.pk_attribute: {"S": self.pk.format(**values)}, self.sk_attribute: {"S": self.sk.format(**values)}}
+
+
 # One stored type. pk and sk are templates filled from the model's attributes, e.g.
 # "QUOTE#{quote_id}"; format specs such as {n:02d} work too
 class ItemSchema(Generic[M]):
-    def __init__(self, model: type[M], *, pk: str, sk: str, attributes: dict[str, Codec]):
+    def __init__(
+        self, model: type[M], *, pk: str, sk: str, attributes: dict[str, Codec], indexes: tuple[Index, ...] = ()
+    ):
         _check_matches(model, attributes)
-        self.model, self.pk, self.sk, self.attributes = model, pk, sk, attributes
+        for index in indexes:
+            if not index.fields <= set(attributes):
+                raise TypeError(f"index {index.name} uses fields {model.__name__} doesn't have")
+        self.model, self.pk, self.sk, self.attributes, self.indexes = model, pk, sk, attributes, indexes
 
     # the same keys and attributes plus extra ones, for subclasses such as each event
     def extend(self, model: type[M], attributes: dict[str, Codec]) -> "ItemSchema[M]":
-        return ItemSchema(model, pk=self.pk, sk=self.sk, attributes=self.attributes | attributes)
+        return ItemSchema(model, pk=self.pk, sk=self.sk, attributes=self.attributes | attributes, indexes=self.indexes)
 
     # build a key from the identifying values, e.g. key(request_id = ..., quote_id = ...)
     def key(self, **values) -> dict:
         return {"pk": {"S": self.pk.format(**values)}, "sk": {"S": self.sk.format(**values)}}
 
+    def _key_parts(self, model: M) -> dict:
+        return {name: codec.key_part(getattr(model, name)) for name, codec in self.attributes.items()}
+
     def key_of(self, model: M) -> dict:
-        return self.key(**{name: codec.key_part(getattr(model, name)) for name, codec in self.attributes.items()})
+        return self.key(**self._key_parts(model))
+
+    # the model's key attributes for one index, or None if it's left out of the index
+    def index_key_of(self, index: Index, model: M) -> dict | None:
+        if any(getattr(model, field) is None for field in index.fields):
+            return None
+        return index.key(**self._key_parts(model))
+
+    # the fixed start of each key, e.g. "QUOTE#", for prefix queries
+    @property
+    def pk_prefix(self) -> str:
+        return self.pk.split("{", 1)[0]
+
+    @property
+    def sk_prefix(self) -> str:
+        return self.sk.split("{", 1)[0]
 
     # one attribute's stored form, for updates and conditions
     def encode(self, name: str, value) -> dict:
         return self.attributes[name].encode(value)
 
     def to_item(self, model: M) -> dict:
-        return self.key_of(model) | _encode_attributes(self.attributes, model)
+        index_keys = {}
+        for index in self.indexes:
+            index_keys |= self.index_key_of(index, model) or {}
+        return self.key_of(model) | index_keys | _encode_attributes(self.attributes, model)
 
     def from_item(self, item: dict) -> M:
         return self.model.model_validate(_decode_attributes(self.attributes, self.model, item))

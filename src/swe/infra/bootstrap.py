@@ -1,11 +1,14 @@
 # deploys everything: table, bus, Lambdas, the stream trigger and one rule per route.
 # Safe to re-run; re-running also redeploys the latest code.
 import json
+import time
 
 from swe.events.routes import ROUTES, function_name, handler_path
 from swe.infra import package
 from swe.infra.aws import client
 from swe.infra.config import EVENT_BUS_NAME, EVENT_SOURCE, TABLE_NAME
+from swe.repo.schema import Index
+from swe.repo.schemas import SCHEMAS
 
 # Lambda requires a role, but LocalStack doesn't enforce IAM, so it needn't exist
 ROLE_ARN = "arn:aws:iam::000000000000:role/yowd-lambda"
@@ -13,23 +16,64 @@ STREAM_FUNCTION = "yowd-stream-publisher"
 RUNTIME = f"python{package.RUNTIME_PYTHON}"
 
 
+# every index declared by a stored type's schema
+INDEXES = {index.name: index for schema in SCHEMAS.values() for index in schema.indexes}
+
+
+def _index_definition(index: Index) -> dict:
+    return {
+        "IndexName": index.name,
+        "KeySchema": [
+            {"AttributeName": index.pk_attribute, "KeyType": "HASH"},
+            {"AttributeName": index.sk_attribute, "KeyType": "RANGE"},
+        ],
+        "Projection": {"ProjectionType": "ALL"},
+    }
+
+
+def _attribute_definitions(*names: str) -> list[dict]:
+    return [{"AttributeName": name, "AttributeType": "S"} for name in names]
+
+
+def _wait_for_indexes(dynamodb) -> None:
+    while any(
+        index["IndexStatus"] != "ACTIVE"
+        for index in dynamodb.describe_table(TableName=TABLE_NAME)["Table"].get("GlobalSecondaryIndexes", [])
+    ):
+        time.sleep(1)
+
+
 def create_table(dynamodb) -> str:
     if TABLE_NAME not in dynamodb.list_tables()["TableNames"]:
         dynamodb.create_table(
             TableName=TABLE_NAME,
-            AttributeDefinitions=[
-                {"AttributeName": "pk", "AttributeType": "S"},
-                {"AttributeName": "sk", "AttributeType": "S"},
-            ],
+            AttributeDefinitions=_attribute_definitions(
+                "pk", "sk", *(name for i in INDEXES.values() for name in (i.pk_attribute, i.sk_attribute))
+            ),
             KeySchema=[
                 {"AttributeName": "pk", "KeyType": "HASH"},
                 {"AttributeName": "sk", "KeyType": "RANGE"},
             ],
+            GlobalSecondaryIndexes=[_index_definition(i) for i in INDEXES.values()],
             BillingMode="PAY_PER_REQUEST",
             StreamSpecification={"StreamEnabled": True, "StreamViewType": "NEW_IMAGE"},
         )
         dynamodb.get_waiter("table_exists").wait(TableName=TABLE_NAME)
-    return dynamodb.describe_table(TableName=TABLE_NAME)["Table"]["LatestStreamArn"]
+
+    # an index added since the table was created; DynamoDB adds one per call. Items written
+    # before it existed lack its key attributes, so they won't appear in it
+    table = dynamodb.describe_table(TableName=TABLE_NAME)["Table"]
+    existing = {i["IndexName"] for i in table.get("GlobalSecondaryIndexes", [])}
+    for index in INDEXES.values():
+        if index.name not in existing:
+            dynamodb.update_table(
+                TableName=TABLE_NAME,
+                AttributeDefinitions=_attribute_definitions(index.pk_attribute, index.sk_attribute),
+                GlobalSecondaryIndexUpdates=[{"Create": _index_definition(index)}],
+            )
+            _wait_for_indexes(dynamodb)
+    _wait_for_indexes(dynamodb)
+    return table["LatestStreamArn"]
 
 
 def create_bus(events) -> None:

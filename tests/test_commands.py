@@ -1,9 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 
-import boto3
 import pytest
-from moto import mock_aws
 
 from swe.app import (
     AcceptQuote,
@@ -19,27 +17,11 @@ from swe.domain.job import JobStateName
 from swe.domain.request import QuoteStatus, RequestStatus
 from swe.domain.shared import DomainError
 from swe.domain.shared.ids import now
-from swe.infra.bootstrap import create_table
 from swe.infra.config import TABLE_NAME
-from swe.repo import ConflictError, NotFoundError, Repository
+from swe.repo import ConflictError, NotFoundError
 from swe.repo.schemas.request import QUOTE
 
 T = now()
-
-
-@pytest.fixture
-def dynamodb(monkeypatch):
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
-    with mock_aws():
-        client = boto3.client("dynamodb", region_name="ap-southeast-2")
-        create_table(client)
-        yield client
-
-
-@pytest.fixture
-def repo(dynamodb):
-    return Repository(dynamodb)
 
 
 # ticks a second per call, like real commands arriving one after another
@@ -272,3 +254,30 @@ def test_cancel_then_refuse_quote(dms, repo):
 def test_unknown_request(dms):
     with pytest.raises(NotFoundError):
         issue(dms, "nope")
+
+
+def test_requests_are_listed_through_indexes(dms, repo):
+    first, second = log(dms), log(dms)
+    log(dms, customer_id="cust-2")
+    anonymous = log(dms, customer_id=None)
+    mine = [r.request_id for r in repo.list_customer_requests("cust-1")]
+    assert mine == [second.request_id, first.request_id]  # newest first
+    open_ids = {r.request_id for r in repo.list_requests_by_status(RequestStatus.OPEN)}
+    assert anonymous.request_id in open_ids and len(open_ids) == 4
+
+
+def test_status_change_moves_request_between_index_partitions(dms, repo):
+    request = log(dms)
+    dms.cancel_request(CancelRequest(request_id=request.request_id, by="cust-1"))
+    assert repo.list_requests_by_status(RequestStatus.OPEN) == []
+    assert [r.status for r in repo.list_requests_by_status(RequestStatus.CANCELLED)] == [RequestStatus.CANCELLED]
+    assert [r.status for r in repo.list_customer_requests("cust-1")] == [RequestStatus.CANCELLED]
+
+
+def test_only_requests_are_indexed(dms, dynamodb):
+    named, anonymous = log(dms), log(dms, customer_id=None)
+    issue(dms, named.request_id)
+    items = {(i["pk"]["S"], i["sk"]["S"]): i for i in dynamodb.scan(TableName=TABLE_NAME)["Items"]}
+    indexed = {key for key, item in items.items() if "by_status_pk" in item}
+    assert indexed == {(f"REQUEST#{r.request_id}", "METADATA") for r in (named, anonymous)}  # no quotes or events
+    assert "by_customer_pk" not in items[(f"REQUEST#{anonymous.request_id}", "METADATA")]  # no customer to index by

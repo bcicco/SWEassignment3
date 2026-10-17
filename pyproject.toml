@@ -20,11 +20,20 @@ requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
+api = [
+    "fastapi>=0.143.3",
+    "uvicorn>=0.54.0",
+]
 dev = [
+    "httpx2>=2.13.1",
     "moto>=5.2.4",
     "pytest>=9.1.1",
     "ruff>=0.17.1",
 ]
+
+# installed by `uv sync` and `uv run`, but left out of the Lambda bundle (see infra/package.py)
+[tool.uv]
+default-groups = ["api", "dev"]
 
 # coding standard: PEP 8, enforced by Ruff (`uv run ruff check` and `uv run ruff format`)
 [tool.ruff]

@@ -10,8 +10,12 @@ from swe.domain.request import (
     RequestLogged,
     RequestStatus,
 )
-from swe.repo.schema import Enum, ItemSchema, List, Number, Optional, String, Timestamp, Window
+from swe.repo.schema import Enum, Index, ItemSchema, List, Number, Optional, String, Timestamp, Window
 from swe.repo.schemas.shared import ADDRESS, HISTORY_EVENT, PARCEL
+
+# a customer's requests, and requests in each status (e.g. open ones awaiting a quote), newest first
+BY_CUSTOMER = Index("by_customer", pk="CUSTOMER#{customer_id}", sk="REQUEST#{created_at}")
+BY_STATUS = Index("by_status", pk="REQUEST_STATUS#{status}", sk="REQUEST#{created_at}")
 
 DELIVERY_REQUEST = ItemSchema(
     DeliveryRequest,
@@ -30,6 +34,7 @@ DELIVERY_REQUEST = ItemSchema(
         "status": Enum(RequestStatus),
         "current_quote_id": Optional(String),
     },
+    indexes=(BY_CUSTOMER, BY_STATUS),
 )
 
 # quotes live in their request's partition
