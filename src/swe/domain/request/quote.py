@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -9,7 +9,7 @@ from swe.domain.shared.errors import DomainError
 from swe.domain.shared.ids import new_id, now
 
 
-class QuoteStatus(str, Enum):
+class QuoteStatus(StrEnum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     REJECTED = "rejected"
@@ -17,19 +17,19 @@ class QuoteStatus(str, Enum):
     SUPERSEDED = "superseded"
 
 
-## documented, class was meant to immutable but also had to record accepted or not 
+## documented, class was meant to immutable but also had to record accepted or not
 # -> individual fields immutable
 class Quote(BaseModel):
-    model_config = ConfigDict(validate_assignment = True) 
-    request_id: str = Field(frozen = True)
-    quote_id: str = Field(default_factory = new_id, frozen = True)
-    price: Decimal = Field(gt = 0, frozen = True) # AUD (S1)
-    eta_pickup: tuple[datetime, datetime] = Field(frozen = True)
-    eta_dropoff: tuple[datetime, datetime] = Field(frozen = True)
-    time_of_issue: datetime = Field(default_factory = now, frozen = True)
-    expiry_time: datetime = Field(frozen = True)
-    issued_by: str = Field(frozen = True)
-    status: QuoteStatus = QuoteStatus.PENDING # never returns to an earlier value, so the repo locks on it
+    model_config = ConfigDict(validate_assignment=True)
+    request_id: str = Field(frozen=True)
+    quote_id: str = Field(default_factory=new_id, frozen=True)
+    price: Decimal = Field(gt=0, frozen=True)  # AUD (S1)
+    eta_pickup: tuple[datetime, datetime] = Field(frozen=True)
+    eta_dropoff: tuple[datetime, datetime] = Field(frozen=True)
+    time_of_issue: datetime = Field(default_factory=now, frozen=True)
+    expiry_time: datetime = Field(frozen=True)
+    issued_by: str = Field(frozen=True)
+    status: QuoteStatus = QuoteStatus.PENDING  # never returns to an earlier value, so the repo locks on it
     responded_by: str | None = None
     responded_at: datetime | None = None
 
@@ -58,7 +58,7 @@ class Quote(BaseModel):
     def accept(self, by: str, at: datetime) -> DeliveryJob:
         self._ensure_respondable(at)
         self._record_response(QuoteStatus.ACCEPTED, by, at)
-        return DeliveryJob(request_id = self.request_id, quote_id = self.quote_id, created_at = at)
+        return DeliveryJob(request_id=self.request_id, quote_id=self.quote_id, created_at=at)
 
     def reject(self, by: str, at: datetime) -> None:
         self._ensure_respondable(at)

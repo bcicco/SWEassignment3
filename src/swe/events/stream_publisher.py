@@ -19,7 +19,7 @@ def to_event(record: dict) -> dict | None:
         return None
     try:
         event = event_schema_for(item).from_item(item)
-    except ValueError: # includes pydantic ValidationError
+    except ValueError:  # includes pydantic ValidationError
         # skip rather than block the shard; the item is still in the table to fix and replay
         log.exception("unreadable history event %s %s", item["pk"]["S"], item["sk"]["S"])
         return None
@@ -32,13 +32,13 @@ def to_event(record: dict) -> dict | None:
 
 
 def publish(events, entries: list[dict]) -> None:
-    for i in range(0, len(entries), 10): # PutEvents takes at most 10
-        result = events.put_events(Entries = entries[i:i + 10])
+    for i in range(0, len(entries), 10):  # PutEvents takes at most 10
+        result = events.put_events(Entries=entries[i : i + 10])
         if result["FailedEntryCount"]:
             raise RuntimeError(f"put_events failed: {result['Entries']}")
 
 
-def handler(event: dict, context = None) -> None:
+def handler(event: dict, context=None) -> None:
     entries = [e for e in map(to_event, event["Records"]) if e]
     if entries:
         publish(client("events"), entries)

@@ -12,7 +12,7 @@ from swe.domain.shared import HistoryEvent, parse_history_event
 def handles(*event_classes: type[HistoryEvent]):
     def wrap(handler):
         @functools.wraps(handler)
-        def lambda_handler(raw: dict, context = None) -> None:
+        def lambda_handler(raw: dict, context=None) -> None:
             event = parse_history_event(raw["detail"])
             if event_classes and not isinstance(event, event_classes):
                 raise TypeError(f"{handler.__name__} doesn't handle {event.event_type}")
@@ -20,4 +20,5 @@ def handles(*event_classes: type[HistoryEvent]):
 
         lambda_handler.event_types = [c.TYPE for c in event_classes] or None
         return lambda_handler
+
     return wrap

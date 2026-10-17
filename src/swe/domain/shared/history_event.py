@@ -21,7 +21,9 @@ class HistoryEvent(Record):
         super().__pydantic_init_subclass__(**kwargs)
         event_type = cls.model_fields["event_type"].default
         if event_type in HistoryEvent.registry:
-            raise TypeError(f"event_type {event_type!r} is already used by {HistoryEvent.registry[event_type].__name__}")
+            raise TypeError(
+                f"event_type {event_type!r} is already used by {HistoryEvent.registry[event_type].__name__}"
+            )
         cls.TYPE = event_type
         HistoryEvent.registry[event_type] = cls
 

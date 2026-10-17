@@ -3,17 +3,20 @@ from swe.domain.shared import HistoryEvent
 from swe.repo.schema import ItemSchema
 from swe.repo.schemas import job, request
 
-SCHEMAS: dict[type, ItemSchema] = {schema.model: schema for schema in [
-    request.DELIVERY_REQUEST,
-    request.QUOTE,
-    request.REQUEST_LOGGED,
-    request.REQUEST_CANCELLED,
-    request.QUOTE_ISSUED,
-    request.QUOTE_ACCEPTED,
-    request.QUOTE_REJECTED,
-    request.QUOTE_REVISION_REQUESTED,
-    job.DELIVERY_JOB,
-]}
+SCHEMAS: dict[type, ItemSchema] = {
+    schema.model: schema
+    for schema in [
+        request.DELIVERY_REQUEST,
+        request.QUOTE,
+        request.REQUEST_LOGGED,
+        request.REQUEST_CANCELLED,
+        request.QUOTE_ISSUED,
+        request.QUOTE_ACCEPTED,
+        request.QUOTE_REJECTED,
+        request.QUOTE_REVISION_REQUESTED,
+        job.DELIVERY_JOB,
+    ]
+}
 
 EVENT_SCHEMAS: dict[str, ItemSchema] = {
     cls.TYPE: SCHEMAS[cls] for cls in HistoryEvent.registry.values() if cls in SCHEMAS

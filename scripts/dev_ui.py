@@ -36,32 +36,41 @@ COMMANDS = {
     "cancel_request": CancelRequest,
 }
 
-ERRORS = [(ForbiddenError, 403), (NotFoundError, 404), (ConflictError, 409), (ValueError, 400)] # ValueError covers DomainError and pydantic
+ERRORS = [
+    (ForbiddenError, 403),
+    (NotFoundError, 404),
+    (ConflictError, 409),
+    (ValueError, 400),
+]  # ValueError covers DomainError and pydantic
 
 
 # every request with its quotes and history, newest first
 def list_requests(dynamodb) -> list[dict]:
     pages = dynamodb.get_paginator("scan").paginate(
-        TableName = TABLE_NAME,
-        FilterExpression = "begins_with(pk, :request) AND sk = :metadata",
-        ExpressionAttributeValues = {":request": {"S": "REQUEST#"}, ":metadata": {"S": "METADATA"}},
+        TableName=TABLE_NAME,
+        FilterExpression="begins_with(pk, :request) AND sk = :metadata",
+        ExpressionAttributeValues={":request": {"S": "REQUEST#"}, ":metadata": {"S": "METADATA"}},
     )
     result = []
     for item in (i for page in pages for i in page["Items"]):
         partition = dynamodb.query(
-            TableName = TABLE_NAME,
-            KeyConditionExpression = "pk = :pk",
-            ExpressionAttributeValues = {":pk": item["pk"]},
-            ConsistentRead = True,
+            TableName=TABLE_NAME,
+            KeyConditionExpression="pk = :pk",
+            ExpressionAttributeValues={":pk": item["pk"]},
+            ConsistentRead=True,
         )["Items"]
         quotes = [QUOTE.from_item(i) for i in partition if i["sk"]["S"].startswith("QUOTE#")]
         events = [event_schema_for(i).from_item(i) for i in partition if i["sk"]["S"].startswith("EVENT#")]
-        result.append({
-            "request": DELIVERY_REQUEST.from_item(item).model_dump(mode = "json"),
-            "quotes": [q.model_dump(mode = "json") for q in sorted(quotes, key = lambda q: q.time_of_issue, reverse = True)],
-            "events": [e.model_dump(mode = "json") for e in events],
-        })
-    return sorted(result, key = lambda r: r["request"]["created_at"], reverse = True)
+        result.append(
+            {
+                "request": DELIVERY_REQUEST.from_item(item).model_dump(mode="json"),
+                "quotes": [
+                    q.model_dump(mode="json") for q in sorted(quotes, key=lambda q: q.time_of_issue, reverse=True)
+                ],
+                "events": [e.model_dump(mode="json") for e in events],
+            }
+        )
+    return sorted(result, key=lambda r: r["request"]["created_at"], reverse=True)
 
 
 def make_handler(dms: DeliveryManagementSystem, dynamodb):
@@ -94,19 +103,20 @@ def make_handler(dms: DeliveryManagementSystem, dynamodb):
             except Exception as e:
                 status = next((s for cls, s in ERRORS if isinstance(e, cls)), 500)
                 return self._json(status, {"error": f"{type(e).__name__}: {e}"})
-            self._json(200, result.model_dump(mode = "json"))
+            self._json(200, result.model_dump(mode="json"))
 
     return Handler
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--memory", action = "store_true", help = "use an in-memory DynamoDB (moto) instead of LocalStack")
-    parser.add_argument("--port", type = int, default = 8000)
+    parser.add_argument("--memory", action="store_true", help="use an in-memory DynamoDB (moto) instead of LocalStack")
+    parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
     if args.memory:
         from moto import mock_aws
+
         os.environ.setdefault("AWS_ACCESS_KEY_ID", "test")
         os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "test")
         context = mock_aws()
@@ -115,11 +125,12 @@ def main() -> None:
 
     with context:
         import boto3
+
         from swe.infra.aws import client
         from swe.infra.bootstrap import create_table
         from swe.infra.config import REGION
 
-        dynamodb = boto3.client("dynamodb", region_name = REGION) if args.memory else client("dynamodb")
+        dynamodb = boto3.client("dynamodb", region_name=REGION) if args.memory else client("dynamodb")
         if args.memory:
             create_table(dynamodb)
         dms = DeliveryManagementSystem(Repository(dynamodb))

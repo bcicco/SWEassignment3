@@ -1,12 +1,12 @@
 from decimal import Decimal
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import Field
 
 from swe.domain.shared.base import DataHolder
 
 
-class ParcelSize(str, Enum):
+class ParcelSize(StrEnum):
     SMALL = "small"
     MEDIUM = "medium"
     LARGE = "large"
@@ -15,5 +15,5 @@ class ParcelSize(str, Enum):
 # only the details needed for pricing and handling (S5)
 class Parcel(DataHolder):
     size: ParcelSize
-    weight_kg: Decimal = Field(gt = 0)
-    quantity: int = Field(default = 1, ge = 1)
+    weight_kg: Decimal = Field(gt=0)
+    quantity: int = Field(default=1, ge=1)

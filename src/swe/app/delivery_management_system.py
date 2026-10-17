@@ -16,7 +16,7 @@ from swe.domain.shared.ids import now
 from swe.repo import Repository
 
 # held by SystemConfiguration in the design (A7)
-QUOTE_VALID_FOR = timedelta(hours = 24)
+QUOTE_VALID_FOR = timedelta(hours=24)
 
 # what a customer's response changes on a quote
 RESPONSE_FIELDS = ["status", "responded_by", "responded_at"]
@@ -40,69 +40,85 @@ class DeliveryManagementSystem:
         self.clock = clock
 
     def log_request(self, command: LogRequest) -> DeliveryRequest:
-        request, logged = DeliveryRequest.log(**command.model_dump(), created_at = self.clock())
+        request, logged = DeliveryRequest.log(**command.model_dump(), created_at=self.clock())
         self.repo.transaction().create(request).create(logged).commit()
         return request
 
     def issue_quote(self, command: IssueQuote) -> Quote:
         request = self.repo.get_request(command.request_id)
-        previous = self.repo.get_quote(request.request_id, request.current_quote_id) if request.current_quote_id else None
-        previous_status = previous.status if previous else None # superseding changes it
+        previous = (
+            self.repo.get_quote(request.request_id, request.current_quote_id) if request.current_quote_id else None
+        )
+        previous_status = previous.status if previous else None  # superseding changes it
         loaded_quote_id = request.current_quote_id
         quote, issued = request.issue_quote(
-            price = command.price,
-            eta_pickup = command.eta_pickup,
-            eta_dropoff = command.eta_dropoff,
-            valid_for = self.quote_valid_for,
-            issued_by = command.staff_id,
-            previous = previous,
-            at = self.clock(),
+            price=command.price,
+            eta_pickup=command.eta_pickup,
+            eta_dropoff=command.eta_dropoff,
+            valid_for=self.quote_valid_for,
+            issued_by=command.staff_id,
+            previous=previous,
+            at=self.clock(),
         )
-        tx = self.repo.transaction().update(
-            request, ["current_quote_id"],
-            where = {"status": RequestStatus.OPEN, "current_quote_id": loaded_quote_id},
-        ).create(quote).create(issued)
+        tx = (
+            self.repo.transaction()
+            .update(
+                request,
+                ["current_quote_id"],
+                where={"status": RequestStatus.OPEN, "current_quote_id": loaded_quote_id},
+            )
+            .create(quote)
+            .create(issued)
+        )
         if previous is not None:
-            tx.update(previous, ["status"], where = {"status": previous_status})
+            tx.update(previous, ["status"], where={"status": previous_status})
         tx.commit()
         return quote
 
     def accept_quote(self, command: AcceptQuote) -> DeliveryJob:
         request, quote = self._load_for_response(command.request_id, command.quote_id, command.customer_id)
-        job, accepted = request.accept_quote(quote, by = command.customer_id, at = self.clock())
-        (self.repo.transaction()
-            .update(request, ["status"], where = {"status": RequestStatus.OPEN})
-            .update(quote, RESPONSE_FIELDS, where = {"status": QuoteStatus.PENDING})
+        job, accepted = request.accept_quote(quote, by=command.customer_id, at=self.clock())
+        (
+            self.repo.transaction()
+            .update(request, ["status"], where={"status": RequestStatus.OPEN})
+            .update(quote, RESPONSE_FIELDS, where={"status": QuoteStatus.PENDING})
             .create(job)
             .create(accepted)
-            .commit())
+            .commit()
+        )
         return job
 
     def reject_quote(self, command: RejectQuote) -> Quote:
         request, quote = self._load_for_response(command.request_id, command.quote_id, command.customer_id)
-        rejected = request.reject_quote(quote, by = command.customer_id, at = self.clock())
-        (self.repo.transaction()
-            .update(quote, RESPONSE_FIELDS, where = {"status": QuoteStatus.PENDING})
+        rejected = request.reject_quote(quote, by=command.customer_id, at=self.clock())
+        (
+            self.repo.transaction()
+            .update(quote, RESPONSE_FIELDS, where={"status": QuoteStatus.PENDING})
             .create(rejected)
-            .commit())
+            .commit()
+        )
         return quote
 
     def request_quote_revision(self, command: RequestQuoteRevision) -> Quote:
         request, quote = self._load_for_response(command.request_id, command.quote_id, command.customer_id)
-        requested = request.request_revision(quote, by = command.customer_id, at = self.clock())
-        (self.repo.transaction()
-            .update(quote, RESPONSE_FIELDS, where = {"status": QuoteStatus.PENDING})
+        requested = request.request_revision(quote, by=command.customer_id, at=self.clock())
+        (
+            self.repo.transaction()
+            .update(quote, RESPONSE_FIELDS, where={"status": QuoteStatus.PENDING})
             .create(requested)
-            .commit())
+            .commit()
+        )
         return quote
 
     def cancel_request(self, command: CancelRequest) -> DeliveryRequest:
         request = self.repo.get_request(command.request_id)
-        cancelled = request.cancel(by = command.by, at = self.clock())
-        (self.repo.transaction()
-            .update(request, ["status"], where = {"status": RequestStatus.OPEN})
+        cancelled = request.cancel(by=command.by, at=self.clock())
+        (
+            self.repo.transaction()
+            .update(request, ["status"], where={"status": RequestStatus.OPEN})
             .create(cancelled)
-            .commit())
+            .commit()
+        )
         return request
 
     # ownership stands in for AccessPolicy until roles exist (QA3.2). A customer

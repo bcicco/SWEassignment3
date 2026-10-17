@@ -15,7 +15,7 @@ from swe.domain.shared import HistoryEvent
 from swe.events.handling import handles
 
 log = logging.getLogger(__name__)
-log.setLevel(logging.INFO) # the Lambda runtime defaults to WARNING
+log.setLevel(logging.INFO)  # the Lambda runtime defaults to WARNING
 
 
 @handles(RequestLogged, QuoteAccepted, QuoteRejected, QuoteRevisionRequested)
@@ -33,7 +33,9 @@ def notify_office_staff(event: RequestLogged | QuoteAccepted | QuoteRejected | Q
 def notify_customer(event: QuoteIssued | RequestCancelled) -> None:
     match event:
         case QuoteIssued():
-            log.info("NOTIFY customer: quote %s for $%s, valid until %s", event.quote_id, event.price, event.expiry_time)
+            log.info(
+                "NOTIFY customer: quote %s for $%s, valid until %s", event.quote_id, event.price, event.expiry_time
+            )
         case RequestCancelled():
             log.info("NOTIFY customer: request %s cancelled", event.request_id)
 

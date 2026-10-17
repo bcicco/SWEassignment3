@@ -7,7 +7,7 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel
 
-M = TypeVar("M", bound = BaseModel)
+M = TypeVar("M", bound=BaseModel)
 
 
 class Codec:
@@ -94,7 +94,9 @@ def _check_matches(model: type[BaseModel], attributes: dict[str, Codec]) -> None
     missing = set(model.model_fields) - set(attributes)
     extra = set(attributes) - set(model.model_fields)
     if missing or extra:
-        raise TypeError(f"schema for {model.__name__} doesn't match its fields: missing {sorted(missing)}, extra {sorted(extra)}")
+        raise TypeError(
+            f"schema for {model.__name__} doesn't match its fields: missing {sorted(missing)}, extra {sorted(extra)}"
+        )
 
 
 def _encode_attributes(attributes: dict[str, Codec], model: BaseModel) -> dict:
@@ -152,7 +154,7 @@ class ItemSchema(Generic[M]):
 
     # the same keys and attributes plus extra ones, for subclasses such as each event
     def extend(self, model: type[M], attributes: dict[str, Codec]) -> "ItemSchema[M]":
-        return ItemSchema(model, pk = self.pk, sk = self.sk, attributes = self.attributes | attributes)
+        return ItemSchema(model, pk=self.pk, sk=self.sk, attributes=self.attributes | attributes)
 
     # build a key from the identifying values, e.g. key(request_id = ..., quote_id = ...)
     def key(self, **values) -> dict:

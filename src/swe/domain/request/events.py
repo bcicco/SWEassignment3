@@ -8,8 +8,8 @@ from swe.domain.shared.history_event import HistoryEvent
 
 class RequestLogged(HistoryEvent):
     event_type: Literal["request_logged"] = "request_logged"
-    customer_id: str | None = None # None for anonymous requests (A9)
-    logged_by: str | None = None # office staff logging for a caller (Task 5)
+    customer_id: str | None = None  # None for anonymous requests (A9)
+    logged_by: str | None = None  # office staff logging for a caller (Task 5)
 
 
 class RequestCancelled(HistoryEvent):
@@ -21,7 +21,7 @@ class QuoteIssued(HistoryEvent):
     quote_id: str
     price: Decimal
     expiry_time: datetime
-    supersedes: str | None = None # the quote this one replaced, if any (A6)
+    supersedes: str | None = None  # the quote this one replaced, if any (A6)
 
 
 class QuoteAccepted(HistoryEvent):

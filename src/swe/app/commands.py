@@ -9,7 +9,7 @@ from swe.domain.shared import Address, Parcel
 
 
 class Command(BaseModel):
-    model_config = ConfigDict(frozen = True)
+    model_config = ConfigDict(frozen=True)
 
 
 # Task 5. customer_id is None for an anonymous request (A9); logged_by is set when
@@ -19,7 +19,7 @@ class LogRequest(Command):
     logged_by: str | None = None
     contact_name: str
     contact_phone: str
-    parcels: list[Parcel] = Field(min_length = 1)
+    parcels: list[Parcel] = Field(min_length=1)
     pickup_address: Address
     dropoff_address: Address
 

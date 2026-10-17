@@ -16,65 +16,76 @@ RUNTIME = f"python{package.RUNTIME_PYTHON}"
 def create_table(dynamodb) -> str:
     if TABLE_NAME not in dynamodb.list_tables()["TableNames"]:
         dynamodb.create_table(
-            TableName = TABLE_NAME,
-            AttributeDefinitions = [
+            TableName=TABLE_NAME,
+            AttributeDefinitions=[
                 {"AttributeName": "pk", "AttributeType": "S"},
                 {"AttributeName": "sk", "AttributeType": "S"},
             ],
-            KeySchema = [
+            KeySchema=[
                 {"AttributeName": "pk", "KeyType": "HASH"},
                 {"AttributeName": "sk", "KeyType": "RANGE"},
             ],
-            BillingMode = "PAY_PER_REQUEST",
-            StreamSpecification = {"StreamEnabled": True, "StreamViewType": "NEW_IMAGE"},
+            BillingMode="PAY_PER_REQUEST",
+            StreamSpecification={"StreamEnabled": True, "StreamViewType": "NEW_IMAGE"},
         )
-        dynamodb.get_waiter("table_exists").wait(TableName = TABLE_NAME)
-    return dynamodb.describe_table(TableName = TABLE_NAME)["Table"]["LatestStreamArn"]
+        dynamodb.get_waiter("table_exists").wait(TableName=TABLE_NAME)
+    return dynamodb.describe_table(TableName=TABLE_NAME)["Table"]["LatestStreamArn"]
 
 
 def create_bus(events) -> None:
     if EVENT_BUS_NAME not in [b["Name"] for b in events.list_event_buses()["EventBuses"]]:
-        events.create_event_bus(Name = EVENT_BUS_NAME)
+        events.create_event_bus(Name=EVENT_BUS_NAME)
 
 
 def deploy_function(lambda_, name: str, handler: str, code: bytes) -> str:
     config = dict(
-        Runtime = RUNTIME,
-        Handler = handler,
-        Role = ROLE_ARN,
-        Timeout = 30,
-        MemorySize = 256,
-        Environment = {"Variables": {"TABLE_NAME": TABLE_NAME, "EVENT_BUS_NAME": EVENT_BUS_NAME}},
+        Runtime=RUNTIME,
+        Handler=handler,
+        Role=ROLE_ARN,
+        Timeout=30,
+        MemorySize=256,
+        Environment={"Variables": {"TABLE_NAME": TABLE_NAME, "EVENT_BUS_NAME": EVENT_BUS_NAME}},
     )
     try:
-        lambda_.get_function(FunctionName = name)
+        lambda_.get_function(FunctionName=name)
     except lambda_.exceptions.ResourceNotFoundException:
         arn = lambda_.create_function(
-            FunctionName = name, Code = {"ZipFile": code}, Architectures = ["arm64"], **config,
+            FunctionName=name,
+            Code={"ZipFile": code},
+            Architectures=["arm64"],
+            **config,
         )["FunctionArn"]
-        lambda_.get_waiter("function_active_v2").wait(FunctionName = name)
+        lambda_.get_waiter("function_active_v2").wait(FunctionName=name)
         return arn
-    lambda_.update_function_code(FunctionName = name, ZipFile = code, Architectures = ["arm64"])
-    lambda_.get_waiter("function_updated_v2").wait(FunctionName = name)
-    arn = lambda_.update_function_configuration(FunctionName = name, **config)["FunctionArn"]
-    lambda_.get_waiter("function_updated_v2").wait(FunctionName = name)
+    lambda_.update_function_code(FunctionName=name, ZipFile=code, Architectures=["arm64"])
+    lambda_.get_waiter("function_updated_v2").wait(FunctionName=name)
+    arn = lambda_.update_function_configuration(FunctionName=name, **config)["FunctionArn"]
+    lambda_.get_waiter("function_updated_v2").wait(FunctionName=name)
     return arn
 
 
 def connect_stream(lambda_, stream_arn: str) -> None:
-    mappings = lambda_.list_event_source_mappings(FunctionName = STREAM_FUNCTION, EventSourceArn = stream_arn)
+    mappings = lambda_.list_event_source_mappings(FunctionName=STREAM_FUNCTION, EventSourceArn=stream_arn)
     if mappings["EventSourceMappings"]:
         return
     lambda_.create_event_source_mapping(
-        FunctionName = STREAM_FUNCTION,
-        EventSourceArn = stream_arn,
-        StartingPosition = "LATEST",
-        BatchSize = 10,
+        FunctionName=STREAM_FUNCTION,
+        EventSourceArn=stream_arn,
+        StartingPosition="LATEST",
+        BatchSize=10,
         # only history events reach the Lambda; to_event still checks
-        FilterCriteria = {"Filters": [{"Pattern": json.dumps({
-            "eventName": ["INSERT"],
-            "dynamodb": {"NewImage": {"sk": {"S": [{"prefix": "EVENT#"}]}}},
-        })}]},
+        FilterCriteria={
+            "Filters": [
+                {
+                    "Pattern": json.dumps(
+                        {
+                            "eventName": ["INSERT"],
+                            "dynamodb": {"NewImage": {"sk": {"S": [{"prefix": "EVENT#"}]}}},
+                        }
+                    )
+                }
+            ]
+        },
     )
 
 
@@ -83,8 +94,8 @@ def create_route(events, route: str, function_arn: str) -> None:
     pattern = {"source": [EVENT_SOURCE]}
     if ROUTES[route].event_types:
         pattern["detail-type"] = ROUTES[route].event_types
-    events.put_rule(Name = name, EventBusName = EVENT_BUS_NAME, EventPattern = json.dumps(pattern))
-    events.put_targets(Rule = name, EventBusName = EVENT_BUS_NAME, Targets = [{"Id": name, "Arn": function_arn}])
+    events.put_rule(Name=name, EventBusName=EVENT_BUS_NAME, EventPattern=json.dumps(pattern))
+    events.put_targets(Rule=name, EventBusName=EVENT_BUS_NAME, Targets=[{"Id": name, "Arn": function_arn}])
 
 
 def main() -> None:

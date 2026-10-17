@@ -16,20 +16,36 @@ PROVIDED_BY_RUNTIME = ["boto3", "botocore", "s3transfer"]
 
 
 def build() -> bytes:
-    shutil.rmtree(BUILD, ignore_errors = True)
-    BUILD.mkdir(parents = True)
+    shutil.rmtree(BUILD, ignore_errors=True)
+    BUILD.mkdir(parents=True)
     requirements = BUILD.parent / "requirements.txt"
     subprocess.run(
         ["uv", "export", "--no-dev", "--no-hashes", "--no-emit-project", "--quiet", "-o", str(requirements)]
         + [arg for pkg in PROVIDED_BY_RUNTIME for arg in ("--no-emit-package", pkg)],
-        cwd = ROOT, check = True,
+        cwd=ROOT,
+        check=True,
     )
     subprocess.run(
-        ["uv", "pip", "install", "--quiet", "-r", str(requirements), "--target", str(BUILD),
-         "--python-platform", "aarch64-manylinux2014", "--python-version", RUNTIME_PYTHON, "--only-binary", ":all:"],
-        cwd = ROOT, check = True,
+        [
+            "uv",
+            "pip",
+            "install",
+            "--quiet",
+            "-r",
+            str(requirements),
+            "--target",
+            str(BUILD),
+            "--python-platform",
+            "aarch64-manylinux2014",
+            "--python-version",
+            RUNTIME_PYTHON,
+            "--only-binary",
+            ":all:",
+        ],
+        cwd=ROOT,
+        check=True,
     )
-    shutil.copytree(ROOT / "src" / "swe", BUILD / "swe", ignore = shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(ROOT / "src" / "swe", BUILD / "swe", ignore=shutil.ignore_patterns("__pycache__"))
 
     with zipfile.ZipFile(ZIP_PATH, "w", zipfile.ZIP_DEFLATED) as zf:
         for path in sorted(BUILD.rglob("*")):

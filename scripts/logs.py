@@ -11,9 +11,9 @@ def main() -> None:
     for name in [STREAM_FUNCTION, *map(function_name, ROUTES)]:
         print(f"--- {name}")
         try:
-            events = logs.filter_log_events(logGroupName = f"/aws/lambda/{name}")["events"]
+            events = logs.filter_log_events(logGroupName=f"/aws/lambda/{name}")["events"]
         except logs.exceptions.ResourceNotFoundException:
-            continue # not invoked yet
+            continue  # not invoked yet
         for event in events:
             if not event["message"].startswith(RUNTIME_LINES):
                 print("  ", event["message"].strip())

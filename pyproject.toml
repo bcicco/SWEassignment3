@@ -23,4 +23,23 @@ build-backend = "uv_build"
 dev = [
     "moto>=5.2.4",
     "pytest>=9.1.1",
+    "ruff>=0.17.1",
 ]
+
+# coding standard: PEP 8, enforced by Ruff (`uv run ruff check` and `uv run ruff format`)
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E", "W", # pycodestyle: PEP 8 layout and whitespace
+    "F",      # pyflakes: unused imports and variables, undefined names
+    "I",      # isort: import order
+    "N",      # pep8-naming: PEP 8 naming conventions
+    "UP",     # pyupgrade: modern syntax for the pinned Python version
+    "B",      # flake8-bugbear: likely bugs
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"] # package __init__ files re-export names

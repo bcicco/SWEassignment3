@@ -15,9 +15,9 @@ from swe.repo.schemas.shared import ADDRESS, HISTORY_EVENT, PARCEL
 
 DELIVERY_REQUEST = ItemSchema(
     DeliveryRequest,
-    pk = "REQUEST#{request_id}",
-    sk = "METADATA",
-    attributes = {
+    pk="REQUEST#{request_id}",
+    sk="METADATA",
+    attributes={
         "request_id": String,
         "created_at": Timestamp,
         "customer_id": Optional(String),
@@ -35,9 +35,9 @@ DELIVERY_REQUEST = ItemSchema(
 # quotes live in their request's partition
 QUOTE = ItemSchema(
     Quote,
-    pk = "REQUEST#{request_id}",
-    sk = "QUOTE#{quote_id}",
-    attributes = {
+    pk="REQUEST#{request_id}",
+    sk="QUOTE#{quote_id}",
+    attributes={
         "request_id": String,
         "quote_id": String,
         "price": Number,
@@ -52,36 +52,54 @@ QUOTE = ItemSchema(
     },
 )
 
-REQUEST_LOGGED = HISTORY_EVENT.extend(RequestLogged, {
-    "event_type": String,
-    "customer_id": Optional(String),
-    "logged_by": Optional(String),
-})
+REQUEST_LOGGED = HISTORY_EVENT.extend(
+    RequestLogged,
+    {
+        "event_type": String,
+        "customer_id": Optional(String),
+        "logged_by": Optional(String),
+    },
+)
 
-REQUEST_CANCELLED = HISTORY_EVENT.extend(RequestCancelled, {
-    "event_type": String,
-})
+REQUEST_CANCELLED = HISTORY_EVENT.extend(
+    RequestCancelled,
+    {
+        "event_type": String,
+    },
+)
 
-QUOTE_ISSUED = HISTORY_EVENT.extend(QuoteIssued, {
-    "event_type": String,
-    "quote_id": String,
-    "price": Number,
-    "expiry_time": Timestamp,
-    "supersedes": Optional(String),
-})
+QUOTE_ISSUED = HISTORY_EVENT.extend(
+    QuoteIssued,
+    {
+        "event_type": String,
+        "quote_id": String,
+        "price": Number,
+        "expiry_time": Timestamp,
+        "supersedes": Optional(String),
+    },
+)
 
-QUOTE_ACCEPTED = HISTORY_EVENT.extend(QuoteAccepted, {
-    "event_type": String,
-    "quote_id": String,
-    "job_id": String,
-})
+QUOTE_ACCEPTED = HISTORY_EVENT.extend(
+    QuoteAccepted,
+    {
+        "event_type": String,
+        "quote_id": String,
+        "job_id": String,
+    },
+)
 
-QUOTE_REJECTED = HISTORY_EVENT.extend(QuoteRejected, {
-    "event_type": String,
-    "quote_id": String,
-})
+QUOTE_REJECTED = HISTORY_EVENT.extend(
+    QuoteRejected,
+    {
+        "event_type": String,
+        "quote_id": String,
+    },
+)
 
-QUOTE_REVISION_REQUESTED = HISTORY_EVENT.extend(QuoteRevisionRequested, {
-    "event_type": String,
-    "quote_id": String,
-})
+QUOTE_REVISION_REQUESTED = HISTORY_EVENT.extend(
+    QuoteRevisionRequested,
+    {
+        "event_type": String,
+        "quote_id": String,
+    },
+)
