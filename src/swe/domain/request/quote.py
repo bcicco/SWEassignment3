@@ -4,9 +4,9 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
-from DeliveryJob import DeliveryJob
-from shared.errors import DomainError
-from shared.ids import new_id, now
+from swe.domain.job.delivery_job import DeliveryJob
+from swe.domain.shared.errors import DomainError
+from swe.domain.shared.ids import new_id, now
 
 
 class QuoteStatus(str, Enum):

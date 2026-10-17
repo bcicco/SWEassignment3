@@ -3,7 +3,7 @@ from enum import Enum
 
 from pydantic import Field
 
-from shared.base import DataHolder
+from swe.domain.shared.base import DataHolder
 
 
 class ParcelSize(str, Enum):

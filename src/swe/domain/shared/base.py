@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from shared.ids import new_id, now
+from swe.domain.shared.ids import new_id, now
 
 
 # data holders are never altered once created (§3.3)

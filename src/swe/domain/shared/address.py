@@ -1,6 +1,6 @@
 from pydantic import Field
 
-from shared.base import DataHolder
+from swe.domain.shared.base import DataHolder
 
 
 class Address(DataHolder): 

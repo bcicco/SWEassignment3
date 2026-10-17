@@ -3,7 +3,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, computed_field
 
-from shared.ids import new_id, now
+from swe.domain.shared.ids import new_id, now
 
 
 # stored so the matching JobState class can be rebuilt on load;

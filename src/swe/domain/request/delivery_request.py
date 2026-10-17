@@ -4,13 +4,22 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
-from DeliveryJob import DeliveryJob
-from HistoryEvent import EventType, HistoryEvent
-from Quote import Quote, QuoteStatus
-from shared.Address import Address
-from shared.Parcel import Parcel
-from shared.errors import DomainError
-from shared.ids import new_id, now
+from swe.domain.job.delivery_job import DeliveryJob
+from swe.domain.request.events import (
+    QuoteAccepted,
+    QuoteIssued,
+    QuoteRejected,
+    QuoteRevisionRequested,
+    QuoteSuperseded,
+    RequestCancelled,
+    RequestLogged,
+)
+from swe.domain.request.quote import Quote, QuoteStatus
+from swe.domain.shared.address import Address
+from swe.domain.shared.parcel import Parcel
+from swe.domain.shared.errors import DomainError
+from swe.domain.shared.history_event import HistoryEvent
+from swe.domain.shared.ids import new_id, now
 
 
 class RequestStatus(str, Enum):
@@ -52,19 +61,16 @@ class DeliveryRequest(BaseModel):
         return "METADATA"
 
     @classmethod
-    def log(cls, **details) -> tuple["DeliveryRequest", HistoryEvent]:
+    def log(cls, **details) -> tuple["DeliveryRequest", RequestLogged]:
         request = cls(**details)
-        actor = request.customer_id or request.logged_by
-        return request, request._event(EventType.REQUEST_LOGGED, actor, request.created_at)
-
-    def _event(self, event_type: EventType, by: str | None, at: datetime, reference_id: str | None = None) -> HistoryEvent:
-        return HistoryEvent(
-            request_id = self.request_id,
-            event_type = event_type,
-            reference_id = reference_id,
-            created_by = by,
-            created_at = at,
+        event = RequestLogged(
+            request_id = request.request_id,
+            customer_id = request.customer_id,
+            logged_by = request.logged_by,
+            created_by = request.customer_id or request.logged_by,
+            created_at = request.created_at,
         )
+        return request, event
 
     def _ensure_open(self) -> None:
         if self.status is not RequestStatus.OPEN:
@@ -105,36 +111,44 @@ class DeliveryRequest(BaseModel):
         events = []
         if previous is not None:
             previous.supersede()
-            events.append(self._event(EventType.QUOTE_SUPERSEDED, issued_by, at, previous.quote_id))
+            events.append(QuoteSuperseded(
+                request_id = self.request_id, quote_id = previous.quote_id, superseded_by = quote.quote_id,
+                created_by = issued_by, created_at = at,
+            ))
         self.current_quote_id = quote.quote_id
-        events.append(self._event(EventType.QUOTE_ISSUED, issued_by, at, quote.quote_id))
+        events.append(QuoteIssued(
+            request_id = self.request_id, quote_id = quote.quote_id, price = quote.price, expiry_time = quote.expiry_time,
+            created_by = issued_by, created_at = at,
+        ))
         return quote, events
 
-    def accept_quote(self, quote: Quote, by: str, at: datetime | None = None) -> tuple[DeliveryJob, HistoryEvent]:
+    def accept_quote(self, quote: Quote, by: str, at: datetime | None = None) -> tuple[DeliveryJob, QuoteAccepted]:
         at = at or now()
         self._ensure_open()
         self._ensure_current(quote)
         job = quote.accept(by, at)
         self.status = RequestStatus.ACCEPTED
-        return job, self._event(EventType.QUOTE_ACCEPTED, by, at, quote.quote_id)
+        return job, QuoteAccepted(
+            request_id = self.request_id, quote_id = quote.quote_id, job_id = job.job_id, created_by = by, created_at = at,
+        )
 
-    def reject_quote(self, quote: Quote, by: str, at: datetime | None = None) -> HistoryEvent:
+    def reject_quote(self, quote: Quote, by: str, at: datetime | None = None) -> QuoteRejected:
         at = at or now()
         self._ensure_open()
         self._ensure_current(quote)
         quote.reject(by, at)
-        return self._event(EventType.QUOTE_REJECTED, by, at, quote.quote_id)
+        return QuoteRejected(request_id = self.request_id, quote_id = quote.quote_id, created_by = by, created_at = at)
 
-    def request_revision(self, quote: Quote, by: str, at: datetime | None = None) -> HistoryEvent:
+    def request_revision(self, quote: Quote, by: str, at: datetime | None = None) -> QuoteRevisionRequested:
         at = at or now()
         self._ensure_open()
         self._ensure_current(quote)
         quote.request_revision(by, at)
-        return self._event(EventType.QUOTE_REVISION_REQUESTED, by, at, quote.quote_id)
+        return QuoteRevisionRequested(request_id = self.request_id, quote_id = quote.quote_id, created_by = by, created_at = at)
 
     # only before acceptance; afterwards it's a DeliveryIssue (A3)
-    def cancel(self, by: str | None, at: datetime | None = None) -> HistoryEvent:
+    def cancel(self, by: str | None, at: datetime | None = None) -> RequestCancelled:
         at = at or now()
         self._ensure_open()
         self.status = RequestStatus.CANCELLED
-        return self._event(EventType.REQUEST_CANCELLED, by, at)
+        return RequestCancelled(request_id = self.request_id, created_by = by, created_at = at)
