@@ -8,7 +8,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 BUILD = ROOT / "build" / "lambda"
 ZIP_PATH = ROOT / "build" / "lambda.zip"
-RUNTIME_PYTHON = "3.11"
+# the Lambda runtime matches the local one; .python-version is the single source
+RUNTIME_PYTHON = (ROOT / ".python-version").read_text().strip()
 
 # the Lambda runtime already ships these, and they're most of the bundle's size
 PROVIDED_BY_RUNTIME = ["boto3", "botocore", "s3transfer"]

@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "ben-matilda", email = "ben@matildamigration.com" }
 ]
-requires-python = ">=3.11"
+requires-python = "==3.11.*"
 dependencies = [
     "boto3>=1.43.114",
     "pydantic",
