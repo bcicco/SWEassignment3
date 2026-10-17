@@ -60,3 +60,4 @@ dt { color: #71717a; } dd { margin: 0; }
 .error { position: fixed; bottom: 20px; right: 20px; max-width: 460px; background: #dc2626; color: #fff; padding: 12px 16px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px #0003; z-index: 1; }
 .acting-as span { white-space: nowrap; }
 .acting-as select, .acting-as input { color: #18181b; }
+.row > button.remove { flex: 0 0 auto; padding: 4px 10px; }

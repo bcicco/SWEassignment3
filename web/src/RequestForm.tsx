@@ -5,9 +5,7 @@ const EMPTY = {
   customer_id: "",
   contact_name: "",
   contact_phone: "",
-  size: "small" as ParcelSize,
-  weight_kg: "",
-  quantity: "1",
+  parcels: [{ size: "small" as ParcelSize, weight_kg: "", quantity: "1" }],
   pickup: { street: "", suburb: "", postcode: "" },
   dropoff: { street: "", suburb: "", postcode: "" },
 };
@@ -17,6 +15,10 @@ export function RequestForm({ role, onSubmit }: { role: Role; onSubmit: (body: N
   const set = (field: string, value: string) => setForm({ ...form, [field]: value });
   const setAddress = (which: "pickup" | "dropoff", field: string, value: string) =>
     setForm({ ...form, [which]: { ...form[which], [field]: value } });
+  const setParcel = (i: number, field: string, value: string) =>
+    setForm({ ...form, parcels: form.parcels.map((p, j) => (j === i ? { ...p, [field]: value } : p)) });
+  const addParcel = () => setForm({ ...form, parcels: [...form.parcels, EMPTY.parcels[0]] });
+  const removeParcel = (i: number) => setForm({ ...form, parcels: form.parcels.filter((_, j) => j !== i) });
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -25,7 +27,7 @@ export function RequestForm({ role, onSubmit }: { role: Role; onSubmit: (body: N
       ...(role === "staff" ? { customer_id: form.customer_id || null } : {}),
       contact_name: form.contact_name,
       contact_phone: form.contact_phone,
-      parcels: [{ size: form.size, weight_kg: form.weight_kg, quantity: Number(form.quantity) }],
+      parcels: form.parcels.map((p) => ({ size: p.size, weight_kg: p.weight_kg, quantity: Number(p.quantity) })),
       pickup_address: form.pickup,
       dropoff_address: form.dropoff,
     });
@@ -54,16 +56,22 @@ export function RequestForm({ role, onSubmit }: { role: Role; onSubmit: (body: N
         <input placeholder="Contact phone" value={form.contact_phone} onChange={(e) => set("contact_phone", e.target.value)} />
       </div>
       <fieldset>
-        <legend>Parcel</legend>
-        <div className="row">
-          <select value={form.size} onChange={(e) => set("size", e.target.value)}>
-            <option value="small">Small</option>
-            <option value="medium">Medium</option>
-            <option value="large">Large</option>
-          </select>
-          <input placeholder="Weight (kg)" value={form.weight_kg} onChange={(e) => set("weight_kg", e.target.value)} />
-          <input type="number" min="1" placeholder="Qty" value={form.quantity} onChange={(e) => set("quantity", e.target.value)} />
-        </div>
+        <legend>Parcels</legend>
+        {form.parcels.map((p, i) => (
+          <div className="row" key={i}>
+            <select value={p.size} onChange={(e) => setParcel(i, "size", e.target.value)}>
+              <option value="small">Small</option>
+              <option value="medium">Medium</option>
+              <option value="large">Large</option>
+            </select>
+            <input placeholder="Weight (kg)" value={p.weight_kg} onChange={(e) => setParcel(i, "weight_kg", e.target.value)} />
+            <input type="number" min="1" placeholder="Qty" value={p.quantity} onChange={(e) => setParcel(i, "quantity", e.target.value)} />
+            {form.parcels.length > 1 && (
+              <button type="button" className="remove" onClick={() => removeParcel(i)} aria-label="Remove parcel">×</button>
+            )}
+          </div>
+        ))}
+        <button type="button" onClick={addParcel}>+ Add parcel</button>
       </fieldset>
       {address("pickup")}
       {address("dropoff")}
