@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 from pydantic import BaseModel
 
+from swe.domain.job import DeliveryJob
 from swe.domain.request import DeliveryRequest
 from swe.domain.shared import HistoryEvent
 from swe.domain.shared.ids import now
@@ -43,8 +44,11 @@ def flow():
         eta_pickup=(T + timedelta(hours=1), T + timedelta(hours=3)),
         eta_dropoff=(T + timedelta(hours=4), T + timedelta(hours=6)),
     )
-    job, accepted = request.accept_quote(q2, by="cust-1", at=T)
-    return request, [q1, q2], job, [logged, issued1, issued2, accepted]
+    accepted = request.accept_quote(q2, by="cust-1", at=T)
+    job, created = DeliveryJob.create(
+        job_id=accepted.job_id, request_id=request.request_id, quote_id=q2.quote_id, customer_id="cust-1", at=T
+    )
+    return request, [q1, q2], job, [logged, issued1, issued2, accepted, created]
 
 
 def test_every_event_type_has_a_schema():
@@ -88,7 +92,7 @@ def test_event_sort_key_leads_with_timestamp():
 
 def test_event_schema_chosen_by_type():
     _, _, _, events = flow()
-    accepted = events[-1]
+    accepted = events[3]
     item = schema_for(accepted).to_item(accepted)
     assert event_schema_for(item).from_item(item) == accepted
     with pytest.raises(ValueError, match="no schema for event_type"):

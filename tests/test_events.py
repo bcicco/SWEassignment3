@@ -4,9 +4,12 @@ from decimal import Decimal
 
 import pytest
 
+from swe.app import DeliveryManagementSystem
+from swe.domain.job import DeliveryJob, JobCreated, JobStateName
 from swe.domain.request import DeliveryRequest, QuoteAccepted, QuoteIssued, RequestLogged
 from swe.domain.shared import HistoryEvent, parse_history_event
 from swe.domain.shared.ids import now
+from swe.events import handlers
 from swe.events.handling import handles
 from swe.events.routes import ROUTES
 from swe.events.stream_publisher import to_event
@@ -33,8 +36,11 @@ def accepted_flow():
         eta_pickup=(t + timedelta(hours=1), t + timedelta(hours=3)),
         eta_dropoff=(t + timedelta(hours=4), t + timedelta(hours=6)),
     )
-    job, accepted = request.accept_quote(quote, by="cust-1")
-    return logged, issued, accepted, job
+    accepted = request.accept_quote(quote, by="cust-1")
+    _, created = DeliveryJob.create(
+        job_id=accepted.job_id, request_id=request.request_id, quote_id=quote.quote_id, customer_id="cust-1"
+    )
+    return logged, issued, accepted, created
 
 
 # what DynamoDB stores, then hands back on the stream
@@ -54,15 +60,16 @@ def eventbridge_event(entry: dict) -> dict:
 
 
 def test_domain_methods_return_specific_event_types():
-    logged, issued, accepted, job = accepted_flow()
+    logged, issued, accepted, created = accepted_flow()
     assert isinstance(logged, RequestLogged) and logged.customer_id == "cust-1"
     assert isinstance(issued, QuoteIssued) and issued.price == Decimal("50")
-    assert isinstance(accepted, QuoteAccepted) and accepted.job_id == job.job_id
+    assert isinstance(accepted, QuoteAccepted) and accepted.customer_id == "cust-1"
+    assert isinstance(created, JobCreated) and created.job_id == accepted.job_id
 
 
 def test_parse_picks_subclass_from_discriminator():
-    _, issued, accepted, _ = accepted_flow()
-    for event in (issued, accepted):
+    _, issued, accepted, created = accepted_flow()
+    for event in (issued, accepted, created):
         parsed = parse_history_event(event.model_dump())
         assert type(parsed) is type(event) and parsed == event
 
@@ -74,8 +81,8 @@ def test_parse_rejects_missing_fields():
 
 # DynamoDB writers drop None attributes, so optional fields must parse when absent
 def test_stream_to_handler_round_trip():
-    logged, issued, accepted, _ = accepted_flow()
-    for event in (logged, issued, accepted):
+    logged, issued, accepted, created = accepted_flow()
+    for event in (logged, issued, accepted, created):
         entry = to_event(stream_record(event))
         assert entry["DetailType"] == event.event_type
         assert "pk" not in entry["Detail"]
@@ -101,10 +108,36 @@ def test_handler_receives_typed_event_and_refuses_others():
         handler(eventbridge_event(to_event(stream_record(issued))))
 
 
+# the event as it reaches the Lambda, through to the saved job; redelivery does nothing
+def test_create_delivery_job_handler(repo, monkeypatch):
+    request, _ = DeliveryRequest.log(**DETAILS)
+    t = now()
+    quote, _ = request.issue_quote(
+        price=Decimal("50"),
+        valid_for=timedelta(hours=24),
+        issued_by="staff-1",
+        previous=None,
+        eta_pickup=(t + timedelta(hours=1), t + timedelta(hours=3)),
+        eta_dropoff=(t + timedelta(hours=4), t + timedelta(hours=6)),
+    )
+    accepted = request.accept_quote(quote, by="cust-1")
+    monkeypatch.setattr(handlers, "system", lambda: DeliveryManagementSystem(repo))
+
+    invocation = eventbridge_event(to_event(stream_record(accepted)))
+    handlers.create_delivery_job(invocation)
+    handlers.create_delivery_job(invocation)
+
+    job = repo.get_job(accepted.job_id)
+    assert (job.request_id, job.quote_id, job.customer_id) == (request.request_id, quote.quote_id, "cust-1")
+    assert job.state is JobStateName.UNALLOCATED
+    assert [e.event_type for e in repo.get_history(request.request_id)] == ["job_created"]
+
+
 def test_routes_declare_event_types():
+    assert ROUTES["create-delivery-job"].event_types == ["quote_accepted"]
     assert ROUTES["notify-office-staff"].event_types == [
         "request_logged",
-        "quote_accepted",
+        "job_created",
         "quote_rejected",
     ]
     assert ROUTES["notify-customer"].event_types == ["quote_issued", "request_cancelled"]

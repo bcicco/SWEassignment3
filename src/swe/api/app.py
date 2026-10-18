@@ -17,7 +17,7 @@ from swe.app import (
     RejectQuote,
 )
 from swe.domain.job import DeliveryJob, JobStateName
-from swe.domain.request import DeliveryRequest, Quote, RequestStatus
+from swe.domain.request import DeliveryRequest, Quote, QuoteAccepted, RequestStatus
 from swe.repo import ConflictError, NotFoundError
 
 # the React dev server (Vite's default port)
@@ -85,8 +85,9 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
         return dms.issue_quote(IssueQuote(request_id=request_id, staff_id=user.id, **body.model_dump()))
 
     # the customer's responses; DeliveryManagementSystem checks it's their request
-    @app.post("/requests/{request_id}/quotes/{quote_id}/accept", status_code=status.HTTP_201_CREATED)
-    def accept_quote(request_id: str, quote_id: str, user: Customer) -> DeliveryJob:
+    # 202: the job (with the returned job_id) is created moments later by an event handler
+    @app.post("/requests/{request_id}/quotes/{quote_id}/accept", status_code=status.HTTP_202_ACCEPTED)
+    def accept_quote(request_id: str, quote_id: str, user: Customer) -> QuoteAccepted:
         return dms.accept_quote(AcceptQuote(request_id=request_id, quote_id=quote_id, customer_id=user.id))
 
     @app.post("/requests/{request_id}/quotes/{quote_id}/reject")

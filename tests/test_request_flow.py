@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
-from swe.domain.job import JobStateName
+from swe.domain.job import DeliveryJob, JobCreated, JobStateName
 from swe.domain.request import (
     DeliveryRequest,
     QuoteAccepted,
@@ -93,14 +93,24 @@ def test_issue_requires_current_quote(request_):
         request_.issue_quote(**quote_args(), previous=None)
 
 
-def test_accept_creates_unallocated_job(request_):
+def test_accept_names_the_job_to_create(request_):
     quote, _ = request_.issue_quote(**quote_args(), previous=None)
-    job, event = request_.accept_quote(quote, by="cust-1", at=T)
+    event = request_.accept_quote(quote, by="cust-1", at=T)
     assert quote.status is QuoteStatus.ACCEPTED
     assert request_.status is RequestStatus.ACCEPTED
-    assert job.state is JobStateName.UNALLOCATED
-    assert (job.request_id, job.quote_id) == (request_.request_id, quote.quote_id)
     assert isinstance(event, QuoteAccepted)
+    assert (event.quote_id, event.customer_id) == (quote.quote_id, "cust-1") and event.job_id
+
+
+def test_job_is_created_unallocated(request_):
+    quote, _ = request_.issue_quote(**quote_args(), previous=None)
+    accepted = request_.accept_quote(quote, by="cust-1", at=T)
+    job, created = DeliveryJob.create(
+        job_id=accepted.job_id, request_id=request_.request_id, quote_id=quote.quote_id, customer_id="cust-1", at=T
+    )
+    assert job.state is JobStateName.UNALLOCATED
+    assert (job.job_id, job.request_id, job.quote_id) == (accepted.job_id, request_.request_id, quote.quote_id)
+    assert isinstance(created, JobCreated) and created.job_id == job.job_id
 
 
 def test_cannot_accept_superseded_quote(request_):

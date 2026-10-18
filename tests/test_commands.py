@@ -6,6 +6,7 @@ import pytest
 from swe.app import (
     AcceptQuote,
     CancelRequest,
+    CreateDeliveryJob,
     DeliveryManagementSystem,
     ForbiddenError,
     IssueQuote,
@@ -55,6 +56,26 @@ def issue(dms, request_id, price="50"):
     )
 
 
+# what the create-delivery-job handler does with a QuoteAccepted
+def create_job(dms, accepted):
+    return dms.create_delivery_job(
+        CreateDeliveryJob(
+            job_id=accepted.job_id,
+            request_id=accepted.request_id,
+            quote_id=accepted.quote_id,
+            customer_id=accepted.customer_id,
+        )
+    )
+
+
+def all_jobs(dynamodb) -> list[dict]:
+    return dynamodb.scan(
+        TableName=TABLE_NAME,
+        FilterExpression="begins_with(pk, :job)",
+        ExpressionAttributeValues={":job": {"S": "JOB#"}},
+    )["Items"]
+
+
 def history(dynamodb, request_id) -> list[str]:
     items = dynamodb.query(
         TableName=TABLE_NAME,
@@ -68,19 +89,62 @@ def test_full_flow_is_saved_with_history(dms, repo, dynamodb):
     request = log(dms)
     q1 = issue(dms, request.request_id)
     q2 = issue(dms, request.request_id, price="45")
-    job = dms.accept_quote(AcceptQuote(request_id=request.request_id, quote_id=q2.quote_id, customer_id="cust-1"))
+    accepted = dms.accept_quote(AcceptQuote(request_id=request.request_id, quote_id=q2.quote_id, customer_id="cust-1"))
 
     assert repo.get_request(request.request_id).status is RequestStatus.ACCEPTED
     assert repo.get_quote(request.request_id, q1.quote_id).status is QuoteStatus.SUPERSEDED
     assert repo.get_quote(request.request_id, q2.quote_id).status is QuoteStatus.ACCEPTED
-    saved_job = repo.get_job(job.job_id)
-    assert (saved_job.state, saved_job.quote_id) == (JobStateName.UNALLOCATED, q2.quote_id)
+    with pytest.raises(NotFoundError):  # not until the handler runs
+        repo.get_job(accepted.job_id)
+
+    create_job(dms, accepted)
+    saved_job = repo.get_job(accepted.job_id)
+    assert (saved_job.state, saved_job.quote_id, saved_job.customer_id) == (
+        JobStateName.UNALLOCATED,
+        q2.quote_id,
+        "cust-1",
+    )
     assert history(dynamodb, request.request_id) == [
         "request_logged",
         "quote_issued",
         "quote_issued",
         "quote_accepted",
+        "job_created",
     ]
+
+
+def test_redelivered_acceptance_creates_one_job(dms, repo, dynamodb):
+    request = log(dms)
+    quote = issue(dms, request.request_id)
+    accepted = dms.accept_quote(
+        AcceptQuote(request_id=request.request_id, quote_id=quote.quote_id, customer_id="cust-1")
+    )
+    first = create_job(dms, accepted)
+    assert create_job(dms, accepted) == first
+    assert len(all_jobs(dynamodb)) == 1
+    assert history(dynamodb, request.request_id).count("job_created") == 1
+
+
+# two deliveries of the event, both checking for the job before either saves
+def test_racing_deliveries_create_one_job(dms, repo, dynamodb, monkeypatch):
+    request = log(dms)
+    quote = issue(dms, request.request_id)
+    accepted = dms.accept_quote(
+        AcceptQuote(request_id=request.request_id, quote_id=quote.quote_id, customer_id="cust-1")
+    )
+    first = create_job(dms, accepted)
+    get_job = repo.get_job
+    calls = iter([NotFoundError("not yet")])
+
+    def stale_then_real(job_id):
+        error = next(calls, None)
+        if error:
+            raise error
+        return get_job(job_id)
+
+    monkeypatch.setattr(repo, "get_job", stale_then_real)
+    assert create_job(dms, accepted) == first
+    assert len(all_jobs(dynamodb)) == 1
 
 
 def test_saved_models_load_back_equal(dms, repo):
@@ -102,8 +166,10 @@ def test_stale_write_conflicts(dms, repo):
 def test_update_requires_existing_item(dms, repo):
     request = log(dms)
     quote = issue(dms, request.request_id)
-    job = dms.accept_quote(AcceptQuote(request_id=request.request_id, quote_id=quote.quote_id, customer_id="cust-1"))
-    ghost = job.model_copy(update={"job_id": "missing"})
+    accepted = dms.accept_quote(
+        AcceptQuote(request_id=request.request_id, quote_id=quote.quote_id, customer_id="cust-1")
+    )
+    ghost = create_job(dms, accepted).model_copy(update={"job_id": "missing"})
     with pytest.raises(ConflictError):
         repo.transaction().update(ghost, ["state"]).commit()
 
@@ -163,7 +229,7 @@ def test_update_refuses_unknown_field(dms, repo):
         repo.transaction().update(request, ["stauts"])
 
 
-def test_concurrent_accept_creates_one_job(dms, repo, dynamodb, monkeypatch):
+def test_concurrent_accept_is_recorded_once(dms, repo, dynamodb, monkeypatch):
     request = log(dms)
     quote = issue(dms, request.request_id)
     command = AcceptQuote(request_id=request.request_id, quote_id=quote.quote_id, customer_id="cust-1")
@@ -179,12 +245,6 @@ def test_concurrent_accept_creates_one_job(dms, repo, dynamodb, monkeypatch):
     with pytest.raises(ConflictError):
         dms.accept_quote(command)
 
-    jobs = dynamodb.scan(
-        TableName=TABLE_NAME,
-        FilterExpression="begins_with(pk, :job)",
-        ExpressionAttributeValues={":job": {"S": "JOB#"}},
-    )["Items"]
-    assert len(jobs) == 1
     assert history(dynamodb, request.request_id).count("quote_accepted") == 1
 
 

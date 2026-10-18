@@ -2,6 +2,7 @@ from swe.app.commands import (
     AcceptQuote,
     CancelRequest,
     Command,
+    CreateDeliveryJob,
     IssueQuote,
     LogRequest,
     RejectQuote,

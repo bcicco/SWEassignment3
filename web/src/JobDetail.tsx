@@ -5,8 +5,9 @@ import { usePolled } from "./usePolled";
 
 export function JobDetail({ user, jobId }: { user: User; jobId: string }) {
   const load = useCallback(() => api(user).getJob(jobId), [user, jobId]);
-  const [detail] = usePolled<Detail>(load);
-  if (!detail) return <div className="card">Loading…</div>;
+  // the job is created by an event handler just after acceptance, so it may 404 at first; check often
+  const [detail] = usePolled<Detail>(load, 1500);
+  if (!detail) return <div className="card muted">Creating the delivery job…</div>;
 
   const { job, request, quote } = detail;
   return (

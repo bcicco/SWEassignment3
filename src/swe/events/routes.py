@@ -3,6 +3,7 @@
 from swe.events import handlers
 
 ROUTES = {
+    "create-delivery-job": handlers.create_delivery_job,
     "notify-office-staff": handlers.notify_office_staff,
     "notify-customer": handlers.notify_customer,
     "audit": handlers.audit,

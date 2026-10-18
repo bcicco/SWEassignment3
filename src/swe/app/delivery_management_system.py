@@ -4,15 +4,16 @@ from datetime import datetime, timedelta
 from swe.app.commands import (
     AcceptQuote,
     CancelRequest,
+    CreateDeliveryJob,
     IssueQuote,
     LogRequest,
     RejectQuote,
 )
 from swe.app.errors import ForbiddenError
 from swe.domain.job import DeliveryJob
-from swe.domain.request import DeliveryRequest, Quote, QuoteStatus, RequestStatus
+from swe.domain.request import DeliveryRequest, Quote, QuoteAccepted, QuoteStatus, RequestStatus
 from swe.domain.shared.ids import now
-from swe.repo import Repository
+from swe.repo import ConflictError, NotFoundError, Repository
 
 # held by SystemConfiguration in the design (A7)
 QUOTE_VALID_FOR = timedelta(hours=24)
@@ -74,17 +75,31 @@ class DeliveryManagementSystem:
         tx.commit()
         return quote
 
-    def accept_quote(self, command: AcceptQuote) -> DeliveryJob:
+    # the job is created afterwards, from the QuoteAccepted event (create_delivery_job)
+    def accept_quote(self, command: AcceptQuote) -> QuoteAccepted:
         request, quote = self._load_for_response(command.request_id, command.quote_id, command.customer_id)
-        job, accepted = request.accept_quote(quote, by=command.customer_id, at=self.clock())
+        accepted = request.accept_quote(quote, by=command.customer_id, at=self.clock())
         (
             self.repo.transaction()
             .update(request, ["status"], where={"status": RequestStatus.OPEN})
             .update(quote, RESPONSE_FIELDS, where={"status": QuoteStatus.PENDING})
-            .create(job)
             .create(accepted)
             .commit()
         )
+        return accepted
+
+    # events can arrive more than once, so an existing job is returned rather than
+    # created again; the conflict covers two deliveries racing each other
+    def create_delivery_job(self, command: CreateDeliveryJob) -> DeliveryJob:
+        try:
+            return self.repo.get_job(command.job_id)
+        except NotFoundError:
+            pass
+        job, created = DeliveryJob.create(**command.model_dump(), at=self.clock())
+        try:
+            self.repo.transaction().create(job).create(created).commit()
+        except ConflictError:
+            return self.repo.get_job(command.job_id)
         return job
 
     def reject_quote(self, command: RejectQuote) -> Quote:

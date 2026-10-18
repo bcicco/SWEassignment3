@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from swe.api import create_app
 from swe.app import DeliveryManagementSystem
 from swe.domain.shared.ids import now
+from swe.events import handlers
 
 CUSTOMER = {"X-User-Id": "cust-1", "X-User-Role": "customer"}
 OTHER_CUSTOMER = {"X-User-Id": "cust-2", "X-User-Role": "customer"}
@@ -21,8 +22,15 @@ DETAILS = {
 
 
 @pytest.fixture
-def api(repo):
-    return TestClient(create_app(DeliveryManagementSystem(repo)))
+def api(repo, monkeypatch):
+    dms = DeliveryManagementSystem(repo)
+    monkeypatch.setattr(handlers, "system", lambda: dms)  # for run_job_handler
+    return TestClient(create_app(dms))
+
+
+# stands in for the stream -> EventBridge -> create-delivery-job Lambda hop
+def run_job_handler(accepted: dict) -> None:
+    handlers.create_delivery_job({"detail": accepted})
 
 
 def log(api, headers=CUSTOMER, **overrides) -> str:
@@ -45,13 +53,22 @@ def test_full_flow(api):
     quote_id = issue(api, request_id)
 
     response = api.post(f"/requests/{request_id}/quotes/{quote_id}/accept", headers=CUSTOMER)
-    assert response.status_code == 201
-    assert response.json()["state"] == "unallocated"
+    assert response.status_code == 202
+    accepted = response.json()
+    assert accepted["event_type"] == "quote_accepted"
+    assert api.get(f"/jobs/{accepted['job_id']}", headers=CUSTOMER).status_code == 404  # not created yet
+    run_job_handler(accepted)
+    assert api.get(f"/jobs/{accepted['job_id']}", headers=CUSTOMER).json()["job"]["state"] == "unallocated"
 
     detail = api.get(f"/requests/{request_id}", headers=CUSTOMER).json()
     assert detail["request"]["status"] == "accepted"
     assert detail["quotes"][0]["status"] == "accepted"
-    assert [e["event_type"] for e in detail["history"]] == ["request_logged", "quote_issued", "quote_accepted"]
+    assert [e["event_type"] for e in detail["history"]] == [
+        "request_logged",
+        "quote_issued",
+        "quote_accepted",
+        "job_created",
+    ]
     assert detail["history"][1]["price"] == "50"  # each event keeps its own fields
 
 
@@ -138,7 +155,8 @@ def test_list_filters_by_status(api):
 
 def accept(api, request_id, quote_id) -> str:
     response = api.post(f"/requests/{request_id}/quotes/{quote_id}/accept", headers=CUSTOMER)
-    assert response.status_code == 201, response.text
+    assert response.status_code == 202, response.text
+    run_job_handler(response.json())
     return response.json()["job_id"]
 
 

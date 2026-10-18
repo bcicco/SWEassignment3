@@ -4,7 +4,6 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from swe.domain.job.delivery_job import DeliveryJob
 from swe.domain.request.events import (
     QuoteAccepted,
     QuoteIssued,
@@ -108,16 +107,18 @@ class DeliveryRequest(BaseModel):
             created_at=at,
         )
 
-    def accept_quote(self, quote: Quote, by: str, at: datetime | None = None) -> tuple[DeliveryJob, QuoteAccepted]:
+    # only the request's own customer may accept (checked by the caller), so they own the job
+    def accept_quote(self, quote: Quote, by: str, at: datetime | None = None) -> QuoteAccepted:
         at = at or now()
         self._ensure_open()
         self._ensure_current(quote)
-        job = quote.accept(by, at)
+        quote.accept(by, at)
         self.status = RequestStatus.ACCEPTED
-        return job, QuoteAccepted(
+        return QuoteAccepted(
             request_id=self.request_id,
             quote_id=quote.quote_id,
-            job_id=job.job_id,
+            job_id=new_id(),
+            customer_id=by,
             created_by=by,
             created_at=at,
         )

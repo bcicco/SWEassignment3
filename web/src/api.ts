@@ -50,6 +50,9 @@ export type HistoryEvent = {
   [field: string]: unknown;
 };
 
+// accepting returns the job's id; an event handler creates the job moments later
+export type QuoteAccepted = HistoryEvent & { quote_id: string; job_id: string; customer_id: string };
+
 export type RequestDetail = { request: DeliveryRequest; quotes: Quote[]; history: HistoryEvent[] };
 
 export type DeliveryJob = { job_id: string; request_id: string; quote_id: string; customer_id: string; created_at: string; state: JobState };
@@ -101,7 +104,7 @@ export const api = (user: User) => ({
   logRequest: (body: NewRequest) => call<DeliveryRequest>(user, "POST", "/requests", body),
   cancel: (id: string) => call<DeliveryRequest>(user, "POST", `/requests/${id}/cancel`),
   issueQuote: (id: string, body: NewQuote) => call<Quote>(user, "POST", `/requests/${id}/quotes`, body),
-  accept: (id: string, quoteId: string) => call<DeliveryJob>(user, "POST", `/requests/${id}/quotes/${quoteId}/accept`),
+  accept: (id: string, quoteId: string) => call<QuoteAccepted>(user, "POST", `/requests/${id}/quotes/${quoteId}/accept`),
   reject: (id: string, quoteId: string) => call<Quote>(user, "POST", `/requests/${id}/quotes/${quoteId}/reject`),
   listJobs: (state?: JobState) => call<JobSummary[]>(user, "GET", `/jobs${state ? `?state=${state}` : ""}`),
   getJob: (id: string) => call<JobDetail>(user, "GET", `/jobs/${id}`),

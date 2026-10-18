@@ -24,10 +24,13 @@ class QuoteIssued(HistoryEvent):
     supersedes: str | None = None  # the quote this one replaced, if any (A6)
 
 
+# the job is created from this by the create-delivery-job handler; its id is chosen
+# here so redelivering the event can't create a second job
 class QuoteAccepted(HistoryEvent):
     event_type: Literal["quote_accepted"] = "quote_accepted"
     quote_id: str
     job_id: str
+    customer_id: str  # who will own the job
 
 
 class QuoteRejected(HistoryEvent):

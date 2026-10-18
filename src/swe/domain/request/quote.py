@@ -4,7 +4,6 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from swe.domain.job.delivery_job import DeliveryJob
 from swe.domain.shared.errors import DomainError
 from swe.domain.shared.ids import new_id, now
 
@@ -53,12 +52,9 @@ class Quote(BaseModel):
         self.responded_by = by
         self.responded_at = at
 
-    # creates the one unallocated job from the accepted terms; only the request's own
-    # customer may accept, so they own the job
-    def accept(self, by: str, at: datetime) -> DeliveryJob:
+    def accept(self, by: str, at: datetime) -> None:
         self._ensure_respondable(at)
         self._record_response(QuoteStatus.ACCEPTED, by, at)
-        return DeliveryJob(request_id=self.request_id, quote_id=self.quote_id, customer_id=by, created_at=at)
 
     def reject(self, by: str, at: datetime) -> None:
         self._ensure_respondable(at)

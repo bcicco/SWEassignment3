@@ -47,6 +47,14 @@ class RejectQuote(Command):
     customer_id: str
 
 
+# raised by the create-delivery-job handler from QuoteAccepted, which chose the job id
+class CreateDeliveryJob(Command):
+    job_id: str
+    request_id: str
+    quote_id: str
+    customer_id: str
+
+
 # A3: before acceptance only
 class CancelRequest(Command):
     request_id: str

@@ -89,6 +89,7 @@ QUOTE_ACCEPTED = HISTORY_EVENT.extend(
         "event_type": String,
         "quote_id": String,
         "job_id": String,
+        "customer_id": String,
     },
 )
 
