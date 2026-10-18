@@ -1,5 +1,6 @@
 # creates the accounts the web client acts as. There's no login, so a caller must name
-# an existing account; account administration (Task 8) is out of scope. Safe to re-run
+# an existing account; account administration (Task 8) is out of scope. Safe to re-run:
+# an existing account is saved again, so it picks up any index added since
 from swe.app import DeliveryManagementSystem
 from swe.domain.user import Customer, DeliveryStaff, StaffMember
 from swe.repo import ConflictError
@@ -13,13 +14,14 @@ USERS = [
 
 
 def main() -> None:
-    users = DeliveryManagementSystem().users
+    dms = DeliveryManagementSystem()
     for user in USERS:
         try:
-            users.add(user)
+            dms.repo.transaction().delete(user).commit()
+            print(f"resaved {user.user_id}")
+        except ConflictError:  # not there yet
             print(f"created {user.user_id}")
-        except ConflictError:
-            print(f"exists  {user.user_id}")
+        dms.users.add(user)
 
 
 if __name__ == "__main__":

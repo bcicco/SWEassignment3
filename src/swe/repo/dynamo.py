@@ -4,7 +4,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from swe.domain.job import DeliveryJob, JobStateName
+from swe.domain.job import Allocation, DeliveryJob, JobStateName
 from swe.domain.request import DeliveryRequest, Quote, RequestStatus
 from swe.domain.shared import HistoryEvent
 from swe.domain.user import AvailabilitySlot, DeliveryStaff, User
@@ -12,7 +12,7 @@ from swe.infra.aws import client
 from swe.infra.config import TABLE_NAME
 from swe.repo.schema import Index, ItemSchema
 from swe.repo.schemas import event_schema_for, schema_for, user_schema_for
-from swe.repo.schemas.job import DELIVERY_JOB, JOBS_BY_CUSTOMER, JOBS_BY_STATE
+from swe.repo.schemas.job import ALLOCATION, DELIVERY_JOB, JOBS_BY_CUSTOMER, JOBS_BY_DRIVER, JOBS_BY_STATE
 from swe.repo.schemas.request import BY_CUSTOMER, BY_STATUS, DELIVERY_REQUEST, QUOTE
 from swe.repo.schemas.shared import HISTORY_EVENT
 from swe.repo.schemas.user import AVAILABILITY_SLOT, DELIVERY_STAFF, USER, USERS_BY_KIND
@@ -197,6 +197,16 @@ class Repository:
 
     def list_jobs_by_state(self, state: JobStateName) -> list[DeliveryJob]:
         return [DELIVERY_JOB.from_item(i) for i in self._query_index(JOBS_BY_STATE, state=state)]
+
+    # the jobs a driver currently holds the active Allocation for
+    def list_driver_jobs(self, delivery_staff_id: str) -> list[DeliveryJob]:
+        items = self._query_index(JOBS_BY_DRIVER, delivery_staff_id=delivery_staff_id)
+        return [DELIVERY_JOB.from_item(i) for i in items]
+
+    # oldest first, so the last is the active one
+    def list_allocations(self, job_id: str) -> list[Allocation]:
+        items = self._query_partition(DELIVERY_JOB.key(job_id=job_id)["pk"], ALLOCATION)
+        return [ALLOCATION.from_item(item) for item in items]
 
     # earliest first, since slot sort keys lead with the start time
     def list_slots(self, delivery_staff_id: str) -> list[AvailabilitySlot]:

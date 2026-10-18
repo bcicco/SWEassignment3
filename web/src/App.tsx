@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError, type DeliveryRequest, type JobState, type JobSummary, type RequestStatus, type Role, type User } from "./api";
+import { Availability } from "./Availability";
 import { label, shortId, when } from "./format";
 import { JobDetail } from "./JobDetail";
 import { RequestDetail } from "./RequestDetail";
@@ -13,7 +14,12 @@ function useActingAs(): [User, (user: User) => void] {
   return [user, setUser];
 }
 
-type Tab = "requests" | "jobs";
+type Tab = "requests" | "jobs" | "availability";
+
+const TAB_LABELS: Record<Tab, string> = { requests: "Delivery requests", jobs: "Delivery jobs", availability: "Availability" };
+// drivers work from the jobs allocated to them and never see requests
+const TABS: Record<Role, Tab[]> = { customer: ["requests", "jobs"], staff: ["requests", "jobs"], driver: ["jobs", "availability"] };
+const ACCOUNTS: Record<Role, string> = { customer: "cust-1", staff: "staff-1", driver: "driver-1" };
 
 // accepted requests are listed as jobs instead
 const REQUEST_FILTERS = [undefined, "open", "cancelled"] as const;
@@ -24,7 +30,7 @@ const ERROR_HINTS: Record<number, string> = { 409: "Someone else changed this fi
 export default function App() {
   const [user, setUser] = useActingAs();
   const [idDraft, setIdDraft] = useState(user.id);
-  const [tab, setTab] = useState<Tab>("requests");
+  const [tab, setTab] = useState<Tab>(TABS[user.role][0]);
   const [status, setStatus] = useState<RequestStatus | undefined>(user.role === "staff" ? "open" : undefined);
   const [jobState, setJobState] = useState<JobState | undefined>(user.role === "staff" ? "unallocated" : undefined);
   const [selected, setSelected] = useState<string>();
@@ -45,6 +51,8 @@ export default function App() {
     setUser(next);
     setIdDraft(next.id);
     setSelected(undefined);
+    setCreating(false);
+    if (!TABS[next.role].includes(tab)) setTab(TABS[next.role][0]);
     setStatus(next.role === "staff" ? "open" : undefined);
     setJobState(next.role === "staff" ? "unallocated" : undefined);
   }
@@ -77,9 +85,10 @@ export default function App() {
       <header>
         <div className="acting-as">
           <span>Acting as</span>
-          <select value={user.role} onChange={(e) => switchTo({ id: e.target.value === "staff" ? "staff-1" : "cust-1", role: e.target.value as Role })}>
+          <select value={user.role} onChange={(e) => switchTo({ id: ACCOUNTS[e.target.value as Role], role: e.target.value as Role })}>
             <option value="customer">Customer</option>
             <option value="staff">Office staff</option>
+            <option value="driver">Driver</option>
           </select>
           <input
             value={idDraft}
@@ -98,17 +107,21 @@ export default function App() {
 
       <main>
         <aside>
-          <button className="primary wide" onClick={() => (showTab("requests"), setCreating(true))}>
-            + New request
-          </button>
+          {user.role !== "driver" && (
+            <button className="primary wide" onClick={() => (showTab("requests"), setCreating(true))}>
+              + New request
+            </button>
+          )}
           <nav className="tabs">
-            {(["requests", "jobs"] as const).map((t) => (
+            {TABS[user.role].map((t) => (
               <button key={t} className={tab === t ? "active" : ""} onClick={() => showTab(t)}>
-                {t === "requests" ? "Delivery requests" : "Delivery jobs"}
+                {TAB_LABELS[t]}
               </button>
             ))}
           </nav>
-          {tab === "requests" ? (
+          {tab === "availability" ? (
+            <p className="muted">Declare the times you can work. Office staff allocate jobs whose pickup window falls inside one of your slots.</p>
+          ) : tab === "requests" ? (
             <>
               <nav className="filters">
                 {REQUEST_FILTERS.map((s) => (
@@ -161,6 +174,8 @@ export default function App() {
                     <div className="muted">
                       {request.contact_name} · {when(job.created_at)} · <span className="mono">{shortId(job.job_id)}</span>
                     </div>
+                    {user.role === "staff" && job.state === "unallocated" && <div className="tag">needs a driver</div>}
+                    {user.role === "staff" && job.delivery_staff_id && <div className="muted">Driver {job.delivery_staff_id}</div>}
                   </li>
                 ))}
               </ul>
@@ -169,7 +184,9 @@ export default function App() {
         </aside>
 
         <section>
-          {creating ? (
+          {tab === "availability" ? (
+            <Availability key={user.id} user={user} run={run} />
+          ) : creating ? (
             <RequestForm
               role={user.role}
               onSubmit={(body) =>
@@ -181,7 +198,7 @@ export default function App() {
               }
             />
           ) : selected && tab === "jobs" ? (
-            <JobDetail key={`${selected}-${user.id}`} user={user} jobId={selected} />
+            <JobDetail key={`${selected}-${user.id}`} user={user} jobId={selected} run={run} />
           ) : selected ? (
             <RequestDetail
               key={`${selected}-${user.id}`}

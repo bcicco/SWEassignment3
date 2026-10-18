@@ -1,12 +1,24 @@
 from collections.abc import Callable
 from datetime import datetime
 
+from pydantic import BaseModel
+
 from swe.app.commands import DeclareSlot, RemoveSlot
 from swe.app.user_directory import UserDirectory
+from swe.domain.job import JobStateName
 from swe.domain.shared import DomainError
 from swe.domain.shared.ids import now
 from swe.domain.user import AvailabilitySlot, DeliveryStaff
 from swe.repo import NotFoundError, Repository
+
+# jobs still taking up a driver's time; delivered and closed ones don't count
+ACTIVE_STATES = {JobStateName.ALLOCATED, JobStateName.IN_TRANSIT, JobStateName.ON_HOLD}
+
+
+# a driver free for a pickup window, with how busy they are (Task 1 2b)
+class Candidate(BaseModel):
+    driver: DeliveryStaff
+    load: int
 
 
 # "Who can take this job?" (§4.6): each driver's availability, kept apart from the
@@ -50,11 +62,25 @@ class StaffRoster:
         return slot
 
     # drivers with a slot covering the whole pickup window (Task 1 subtask 2). A driver
-    # with no slots is never a candidate (Task 8 3a). TODO with allocation: rank them
-    # by their current load (variant 2b)
+    # with no slots is never a candidate (Task 8 3a)
     def available_for(self, pickup_window: tuple[datetime, datetime]) -> list[DeliveryStaff]:
-        return [
-            driver
-            for driver in self.users.list_delivery_staff()
-            if any(slot.covers(pickup_window) for slot in self.slots_of(driver.user_id))
-        ]
+        return [driver for driver in self.users.list_delivery_staff() if self._covers(driver.user_id, pickup_window)]
+
+    # checked again just before an allocation is saved (A2 Figure 7.2b, step 25)
+    def is_available(self, delivery_staff_id: str, pickup_window: tuple[datetime, datetime]) -> bool:
+        return isinstance(self.users.find(delivery_staff_id), DeliveryStaff) and self._covers(
+            delivery_staff_id, pickup_window
+        )
+
+    # how many unfinished jobs the driver holds. Simpler than the design's "allocations
+    # for the period": every unfinished job counts, whatever its day
+    def load_of(self, delivery_staff_id: str) -> int:
+        return sum(job.state in ACTIVE_STATES for job in self.repo.list_driver_jobs(delivery_staff_id))
+
+    # available drivers, least busy first, so availability is never just yes or no (2b)
+    def candidates_for(self, pickup_window: tuple[datetime, datetime]) -> list[Candidate]:
+        candidates = [Candidate(driver=d, load=self.load_of(d.user_id)) for d in self.available_for(pickup_window)]
+        return sorted(candidates, key=lambda c: (c.load, c.driver.user_id))
+
+    def _covers(self, delivery_staff_id: str, pickup_window: tuple[datetime, datetime]) -> bool:
+        return any(slot.covers(pickup_window) for slot in self.slots_of(delivery_staff_id))

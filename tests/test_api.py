@@ -13,6 +13,7 @@ CUSTOMER = {"X-User-Id": "cust-1"}
 OTHER_CUSTOMER = {"X-User-Id": "cust-2"}
 STAFF = {"X-User-Id": "staff-1"}
 DRIVER = {"X-User-Id": "driver-1"}
+OTHER_DRIVER = {"X-User-Id": "driver-2"}
 
 DETAILS = {
     "contact_name": "Sam",
@@ -31,6 +32,7 @@ def api(repo, monkeypatch):
         Customer(user_id="cust-2", name="Jo", phone="0400000000"),
         StaffMember(user_id="staff-1", name="Alex", phone="0411111111"),
         DeliveryStaff(user_id="driver-1", name="Lee", phone="0422222222"),
+        DeliveryStaff(user_id="driver-2", name="Kim", phone="0433333333"),
     ]:
         dms.users.add(user)
     monkeypatch.setattr(handlers, "system", lambda: dms)  # for run_job_handler
@@ -225,3 +227,45 @@ def test_drivers_manage_their_own_availability(api):
     assert api.delete(f"/availability/{slot_id}", headers=DRIVER).status_code == 204
     assert api.get("/availability", headers=DRIVER).json() == []
     assert api.delete(f"/availability/{slot_id}", headers=DRIVER).status_code == 404
+
+
+def job_for(api) -> str:
+    request_id = log(api)
+    response = api.post(f"/requests/{request_id}/quotes/{issue(api, request_id)}/accept", headers=CUSTOMER)
+    run_job_handler(response.json())
+    return response.json()["job_id"]
+
+
+def test_staff_allocate_and_reallocate_a_job(api):
+    t = now()
+    whole_day = {"window": [(t - timedelta(hours=1)).isoformat(), (t + timedelta(hours=10)).isoformat()]}
+    for driver in (DRIVER, OTHER_DRIVER):
+        assert api.post("/availability", json=whole_day, headers=driver).status_code == 201
+    job_id = job_for(api)
+
+    candidates = api.get(f"/jobs/{job_id}/candidates", headers=STAFF).json()
+    assert [(c["driver"]["user_id"], c["load"]) for c in candidates] == [("driver-1", 0), ("driver-2", 0)]
+    assert api.get(f"/jobs/{job_id}/candidates", headers=DRIVER).status_code == 403
+
+    # only office staff allocate
+    assert (
+        api.post(f"/jobs/{job_id}/allocate", json={"delivery_staff_id": "driver-1"}, headers=DRIVER).status_code == 403
+    )
+    response = api.post(f"/jobs/{job_id}/allocate", json={"delivery_staff_id": "driver-1"}, headers=STAFF)
+    assert response.status_code == 201, response.text
+    again = api.post(f"/jobs/{job_id}/allocate", json={"delivery_staff_id": "driver-2"}, headers=STAFF)
+    assert again.status_code == 400
+    assert "already allocated to driver-1" in again.json()["detail"]
+
+    # a driver sees only the jobs allocated to them, and no requests
+    assert [s["job"]["job_id"] for s in api.get("/jobs", headers=DRIVER).json()] == [job_id]
+    assert api.get(f"/jobs/{job_id}", headers=DRIVER).status_code == 200
+    assert api.get(f"/jobs/{job_id}", headers=OTHER_DRIVER).status_code == 403
+    assert api.get("/requests", headers=DRIVER).status_code == 403
+
+    body = {"delivery_staff_id": "driver-2", "reason": "driver-1 is off sick"}
+    assert api.post(f"/jobs/{job_id}/reallocate", json=body, headers=STAFF).status_code == 201
+    assert api.get("/jobs", headers=DRIVER).json() == []
+    detail = api.get(f"/jobs/{job_id}", headers=OTHER_DRIVER).json()
+    assert detail["job"]["delivery_staff_id"] == "driver-2"
+    assert [a["delivery_staff_id"] for a in detail["allocations"]] == ["driver-1", "driver-2"]

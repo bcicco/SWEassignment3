@@ -3,19 +3,22 @@ from datetime import datetime, timedelta
 
 from swe.app.commands import (
     AcceptQuote,
+    AllocateJob,
     CancelRequest,
     CreateDeliveryJob,
     DeclareSlot,
     IssueQuote,
     LogRequest,
+    ReallocateJob,
     RejectQuote,
     RemoveSlot,
 )
 from swe.app.errors import ForbiddenError
-from swe.app.staff_roster import StaffRoster
+from swe.app.staff_roster import Candidate, StaffRoster
 from swe.app.user_directory import UserDirectory
-from swe.domain.job import DeliveryJob
+from swe.domain.job import Allocation, DeliveryJob, JobAllocated, JobStateName
 from swe.domain.request import DeliveryRequest, Quote, QuoteAccepted, QuoteStatus, RequestStatus
+from swe.domain.shared import DomainError
 from swe.domain.shared.ids import now
 from swe.domain.user import AvailabilitySlot, User
 from swe.repo import ConflictError, NotFoundError, Repository
@@ -121,6 +124,51 @@ class DeliveryManagementSystem:
         except ConflictError:
             return self.repo.get_job(command.job_id)
         return job
+
+    # drivers free for the job's committed pickup window, least busy first (Task 1
+    # subtask 2). An empty list means the window must be renegotiated with the
+    # customer (variant 2a)
+    def job_candidates(self, job_id: str) -> list[Candidate]:
+        return self.roster.candidates_for(self._pickup_window(self.repo.get_job(job_id)))
+
+    # Task 1 subtask 3. The save only succeeds if the job is still unallocated, so two
+    # staff allocating at once can't both win (variant 3a); the loser reloads and is
+    # told who has it. This replaces the design's Dispatcher lock
+    def allocate_job(self, command: AllocateJob) -> Allocation:
+        job = self.repo.get_job(command.job_id)
+        self._ensure_available(command.delivery_staff_id, job)
+        allocation, allocated = job.allocate(command.delivery_staff_id, by=command.by, at=self.clock())
+        self._save_allocation(
+            job, allocation, allocated, where={"state": JobStateName.UNALLOCATED, "allocation_id": None}
+        )
+        return allocation
+
+    # Task 1 subtask 5: the earlier Allocation is kept, and the job stays at its stage
+    def reallocate_job(self, command: ReallocateJob) -> Allocation:
+        job = self.repo.get_job(command.job_id)
+        loaded = {"state": job.state, "allocation_id": job.allocation_id}
+        self._ensure_available(command.delivery_staff_id, job)
+        allocation, allocated = job.reallocate(
+            command.delivery_staff_id, reason=command.reason, by=command.by, at=self.clock()
+        )
+        self._save_allocation(job, allocation, allocated, where=loaded)
+        return allocation
+
+    def _pickup_window(self, job: DeliveryJob) -> tuple[datetime, datetime]:
+        return self.repo.get_quote(job.request_id, job.quote_id).eta_pickup
+
+    def _ensure_available(self, delivery_staff_id: str, job: DeliveryJob) -> None:
+        if not self.roster.is_available(delivery_staff_id, self._pickup_window(job)):
+            raise DomainError(f"{delivery_staff_id} isn't available for the whole pickup window")
+
+    def _save_allocation(self, job: DeliveryJob, allocation: Allocation, allocated: JobAllocated, where: dict) -> None:
+        (
+            self.repo.transaction()
+            .update(job, ["state", "allocation_id", "delivery_staff_id"], where=where)
+            .create(allocation)
+            .create(allocated)
+            .commit()
+        )
 
     def reject_quote(self, command: RejectQuote) -> Quote:
         request, quote = self._load_for_response(command.request_id, command.quote_id, command.customer_id)

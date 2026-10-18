@@ -33,7 +33,11 @@ def is_customer(user: User) -> bool:
     return isinstance(user, CustomerAccount)
 
 
+def is_driver(user: User) -> bool:
+    return isinstance(user, DeliveryStaff)
+
+
 CurrentUser = Annotated[User, Depends(current_user)]
 Customer = Annotated[CustomerAccount, Depends(_require(is_customer, "customers"))]
 Staff = Annotated[StaffMember, Depends(_require(lambda u: isinstance(u, StaffMember), "office staff"))]
-Driver = Annotated[DeliveryStaff, Depends(_require(lambda u: isinstance(u, DeliveryStaff), "delivery staff"))]
+Driver = Annotated[DeliveryStaff, Depends(_require(is_driver, "delivery staff"))]
