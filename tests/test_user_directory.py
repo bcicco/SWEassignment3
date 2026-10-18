@@ -27,3 +27,20 @@ def test_an_id_has_one_account(dms):
 def test_unknown_user(dms):
     with pytest.raises(NotFoundError):
         dms.identify("nobody")
+
+
+def test_list_delivery_staff_returns_only_drivers(dms):
+    for user in [
+        DeliveryStaff(user_id="driver-2", name="Kim", phone="0400000002"),
+        Customer(user_id="cust-1", name="Sam", phone="0400000000"),
+        StaffMember(user_id="staff-1", name="Alex", phone="0411111111"),
+        DeliveryStaff(user_id="driver-1", name="Lee", phone="0400000001"),
+    ]:
+        dms.users.add(user)
+    drivers = dms.users.list_delivery_staff()
+    assert [d.user_id for d in drivers] == ["driver-1", "driver-2"]
+    assert all(type(d) is DeliveryStaff for d in drivers)
+
+
+def test_no_drivers(dms):
+    assert dms.users.list_delivery_staff() == []

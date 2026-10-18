@@ -171,9 +171,12 @@ class ItemSchema(Generic[M]):
                 raise TypeError(f"index {index.name} uses fields {model.__name__} doesn't have")
         self.model, self.pk, self.sk, self.attributes, self.indexes = model, pk, sk, attributes, indexes
 
-    # the same keys and attributes plus extra ones, for subclasses such as each event
-    def extend(self, model: type[M], attributes: dict[str, Codec]) -> "ItemSchema[M]":
-        return ItemSchema(model, pk=self.pk, sk=self.sk, attributes=self.attributes | attributes, indexes=self.indexes)
+    # the same keys and attributes plus extra ones, for subclasses such as each event.
+    # Extra indexes can use the extra attributes
+    def extend(self, model: type[M], attributes: dict[str, Codec], indexes: tuple[Index, ...] = ()) -> "ItemSchema[M]":
+        return ItemSchema(
+            model, pk=self.pk, sk=self.sk, attributes=self.attributes | attributes, indexes=self.indexes + indexes
+        )
 
     # build a key from the identifying values, e.g. key(request_id = ..., quote_id = ...)
     def key(self, **values) -> dict:

@@ -1,5 +1,8 @@
 from swe.domain.user import Customer, DeliveryStaff, StaffMember, User
-from swe.repo.schema import ItemSchema, String, Timestamp
+from swe.repo.schema import Index, ItemSchema, String, Timestamp
+
+# the accounts of each kind, e.g. every driver for StaffRoster
+USERS_BY_KIND = Index("users_by_kind", pk="USER_KIND#{kind}", sk="USER#{user_id}")
 
 USER = ItemSchema(
     User,
@@ -13,6 +16,6 @@ USER = ItemSchema(
     },
 )
 
-CUSTOMER = USER.extend(Customer, {"kind": String})
-STAFF_MEMBER = USER.extend(StaffMember, {"kind": String})
-DELIVERY_STAFF = USER.extend(DeliveryStaff, {"kind": String})
+CUSTOMER = USER.extend(Customer, {"kind": String}, indexes=(USERS_BY_KIND,))
+STAFF_MEMBER = USER.extend(StaffMember, {"kind": String}, indexes=(USERS_BY_KIND,))
+DELIVERY_STAFF = USER.extend(DeliveryStaff, {"kind": String}, indexes=(USERS_BY_KIND,))

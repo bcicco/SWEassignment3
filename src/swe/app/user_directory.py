@@ -1,4 +1,4 @@
-from swe.domain.user import User
+from swe.domain.user import DeliveryStaff, User
 from swe.repo import Repository
 
 
@@ -16,3 +16,8 @@ class UserDirectory:
     # NotFoundError if there's no account
     def find(self, user_id: str) -> User:
         return self.repo.get_user(user_id)
+
+    # every driver, for StaffRoster to match against a job's pickup window. Read from
+    # an index, so a just-added driver may take a moment to appear
+    def list_delivery_staff(self) -> list[DeliveryStaff]:
+        return sorted(self.repo.list_delivery_staff(), key=lambda d: d.user_id)
