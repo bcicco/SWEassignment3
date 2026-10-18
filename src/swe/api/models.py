@@ -7,7 +7,7 @@ from typing import Annotated, Union
 from pydantic import BaseModel, Field
 
 import swe.domain  # noqa: F401  registers every HistoryEvent subclass before the union below is built
-from swe.domain.job import DeliveryJob
+from swe.domain.job import Allocation, DeliveryJob
 from swe.domain.request import DeliveryRequest, Quote
 from swe.domain.shared import Address, HistoryEvent, Parcel
 
@@ -26,6 +26,15 @@ class NewRequest(BaseModel):
 # a driver declares slots for themselves
 class NewSlot(BaseModel):
     window: tuple[datetime, datetime]
+
+
+class NewAllocation(BaseModel):
+    delivery_staff_id: str
+
+
+class NewReallocation(BaseModel):
+    delivery_staff_id: str
+    reason: str
 
 
 class NewQuote(BaseModel):
@@ -53,3 +62,4 @@ class JobSummary(BaseModel):
 
 class JobDetail(JobSummary):
     quote: Quote  # the accepted terms
+    allocations: list[Allocation]  # oldest first; the last is active

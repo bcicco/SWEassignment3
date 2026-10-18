@@ -7,20 +7,32 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from swe.api.identity import CurrentUser, Customer, Driver, Staff, is_customer
-from swe.api.models import JobDetail, JobSummary, NewQuote, NewRequest, NewSlot, RequestDetail
+from swe.api.identity import CurrentUser, Customer, Driver, Staff, is_customer, is_driver
+from swe.api.models import (
+    JobDetail,
+    JobSummary,
+    NewAllocation,
+    NewQuote,
+    NewReallocation,
+    NewRequest,
+    NewSlot,
+    RequestDetail,
+)
 from swe.app import (
     AcceptQuote,
+    AllocateJob,
     CancelRequest,
+    Candidate,
     DeclareSlot,
     DeliveryManagementSystem,
     ForbiddenError,
     IssueQuote,
     LogRequest,
+    ReallocateJob,
     RejectQuote,
     RemoveSlot,
 )
-from swe.domain.job import DeliveryJob, JobStateName
+from swe.domain.job import Allocation, DeliveryJob, JobStateName
 from swe.domain.request import DeliveryRequest, Quote, QuoteAccepted, RequestStatus
 from swe.domain.user import AvailabilitySlot, DeliveryStaff
 from swe.repo import ConflictError, NotFoundError
@@ -69,8 +81,11 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
     def available_drivers(start: datetime, end: datetime, user: Staff) -> list[DeliveryStaff]:
         return dms.roster.available_for((start, end))
 
-    # customers see only their own requests; staff see all of them
+    # customers see only their own requests; staff see all of them. Drivers work from
+    # jobs, which carry the request's addresses and contact
     def visible_request(request_id: str, user: CurrentUser) -> DeliveryRequest:
+        if is_driver(user):
+            raise ForbiddenError("drivers see jobs, not requests")
         request = repo.get_request(request_id)
         if is_customer(user) and request.customer_id != user.user_id:
             raise ForbiddenError("not your request")
@@ -78,6 +93,8 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
 
     @app.get("/requests")
     def list_requests(user: CurrentUser, status: RequestStatus | None = None) -> list[DeliveryRequest]:
+        if is_driver(user):
+            raise ForbiddenError("drivers see jobs, not requests")
         if is_customer(user):  # a customer has few requests, so filter them here
             return [r for r in repo.list_customer_requests(user.user_id) if status in (None, r.status)]
         statuses = [status] if status else list(RequestStatus)
@@ -118,17 +135,22 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
     def reject_quote(request_id: str, quote_id: str, user: Customer) -> Quote:
         return dms.reject_quote(RejectQuote(request_id=request_id, quote_id=quote_id, customer_id=user.user_id))
 
-    # customers see only their own jobs; staff see all of them
+    # customers see only their own jobs and drivers only the ones allocated to them
+    # (QA3.2); staff see all of them
     def visible_job(job_id: str, user: CurrentUser) -> DeliveryJob:
         job = repo.get_job(job_id)
         if is_customer(user) and job.customer_id != user.user_id:
             raise ForbiddenError("not your job")
+        if is_driver(user) and job.delivery_staff_id != user.user_id:
+            raise ForbiddenError("not allocated to you")
         return job
 
     @app.get("/jobs")
     def list_jobs(user: CurrentUser, state: JobStateName | None = None) -> list[JobSummary]:
         if is_customer(user):
             jobs = [j for j in repo.list_customer_jobs(user.user_id) if state in (None, j.state)]
+        elif is_driver(user):
+            jobs = [j for j in repo.list_driver_jobs(user.user_id) if state in (None, j.state)]
         else:
             states = [state] if state else list(JobStateName)
             jobs = sorted(
@@ -141,7 +163,24 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
     def get_job(job_id: str, user: CurrentUser) -> JobDetail:
         job = visible_job(job_id, user)
         return JobDetail(
-            job=job, request=repo.get_request(job.request_id), quote=repo.get_quote(job.request_id, job.quote_id)
+            job=job,
+            request=repo.get_request(job.request_id),
+            quote=repo.get_quote(job.request_id, job.quote_id),
+            allocations=repo.list_allocations(job_id),
         )
+
+    # Task 1: office staff find a driver for the job's pickup window and allocate it
+    @app.get("/jobs/{job_id}/candidates")
+    def job_candidates(job_id: str, user: Staff) -> list[Candidate]:
+        return dms.job_candidates(job_id)
+
+    @app.post("/jobs/{job_id}/allocate", status_code=status.HTTP_201_CREATED)
+    def allocate_job(job_id: str, body: NewAllocation, user: Staff) -> Allocation:
+        return dms.allocate_job(AllocateJob(job_id=job_id, delivery_staff_id=body.delivery_staff_id, by=user.user_id))
+
+    @app.post("/jobs/{job_id}/reallocate", status_code=status.HTTP_201_CREATED)
+    def reallocate_job(job_id: str, body: NewReallocation, user: Staff) -> Allocation:
+        command = ReallocateJob(job_id=job_id, **body.model_dump(), by=user.user_id)
+        return dms.reallocate_job(command)
 
     return app

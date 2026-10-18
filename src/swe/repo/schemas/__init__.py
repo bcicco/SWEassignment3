@@ -15,6 +15,8 @@ SCHEMAS: dict[type, ItemSchema] = {
         request.QUOTE_REJECTED,
         job.DELIVERY_JOB,
         job.JOB_CREATED,
+        job.ALLOCATION,
+        job.JOB_ALLOCATED,
         user.CUSTOMER,
         user.STAFF_MEMBER,
         user.DELIVERY_STAFF,

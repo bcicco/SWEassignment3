@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { api, type NewQuote, type RequestDetail as Detail, type User } from "./api";
-import { label, when, windowOf } from "./format";
+import { iso, label, local, when, windowOf } from "./format";
 import { usePolled } from "./usePolled";
 
 type Run = (action: () => Promise<unknown>) => Promise<boolean>;
@@ -112,13 +112,6 @@ export function RequestDetail({ user, requestId, run, onAccepted }: Props) {
 }
 
 // datetime-local inputs, defaulting to a pickup 1–3 h and a drop-off 4–6 h from now
-const local = (hours: number) => {
-  const d = new Date(Date.now() + hours * 3600e3);
-  d.setMinutes(0, 0, 0);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60e3).toISOString().slice(0, 16);
-};
-const iso = (value: string) => new Date(value).toISOString();
-
 function IssueQuote({ onSubmit, superseding }: { onSubmit: (body: NewQuote) => Promise<boolean>; superseding: boolean }) {
   const [price, setPrice] = useState("");
   const [times, setTimes] = useState(() => [local(1), local(3), local(4), local(6)]);

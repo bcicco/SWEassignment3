@@ -1,7 +1,7 @@
 // typed client for the FastAPI backend (src/swe/api). Types mirror its OpenAPI schema
 // at /docs; there's no login, so every call says who it's acting as
 
-export type Role = "customer" | "staff";
+export type Role = "customer" | "staff" | "driver";
 // role only picks which screens to show; the API takes it from the account, not the client
 export type User = { id: string; role: Role };
 
@@ -56,9 +56,35 @@ export type QuoteAccepted = HistoryEvent & { quote_id: string; job_id: string; c
 
 export type RequestDetail = { request: DeliveryRequest; quotes: Quote[]; history: HistoryEvent[] };
 
-export type DeliveryJob = { job_id: string; request_id: string; quote_id: string; customer_id: string; created_at: string; state: JobState };
+export type DeliveryJob = {
+  job_id: string;
+  request_id: string;
+  quote_id: string;
+  customer_id: string;
+  created_at: string;
+  state: JobState;
+  allocation_id: string | null;
+  delivery_staff_id: string | null; // the driver it's currently allocated to
+};
 export type JobSummary = { job: DeliveryJob; request: DeliveryRequest };
-export type JobDetail = JobSummary & { quote: Quote };
+
+// one assignment to a driver; a reallocation names the one it replaces
+export type Allocation = {
+  id: string;
+  created_at: string;
+  created_by: string | null;
+  job_id: string;
+  delivery_staff_id: string;
+  replaces: string | null;
+  reason: string | null;
+};
+export type JobDetail = JobSummary & { quote: Quote; allocations: Allocation[] };
+
+export type DeliveryStaff = { user_id: string; name: string; phone: string; kind: "delivery_staff" };
+// a driver free for the job's pickup window, with how many unfinished jobs they hold
+export type Candidate = { driver: DeliveryStaff; load: number };
+
+export type AvailabilitySlot = { id: string; created_at: string; delivery_staff_id: string; window: [string, string] };
 
 export type NewRequest = {
   customer_id?: string | null;
@@ -81,12 +107,13 @@ export class ApiError extends Error {
 
 const BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8001";
 
-async function call<T>(user: User, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+async function call<T>(user: User, method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
   const response = await fetch(BASE + path, {
     method,
     headers: { "X-User-Id": user.id, "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (response.status === 204) return undefined as T;
   const data = await response.json();
   if (!response.ok) {
     // 422s from FastAPI list each invalid field
@@ -109,4 +136,12 @@ export const api = (user: User) => ({
   reject: (id: string, quoteId: string) => call<Quote>(user, "POST", `/requests/${id}/quotes/${quoteId}/reject`),
   listJobs: (state?: JobState) => call<JobSummary[]>(user, "GET", `/jobs${state ? `?state=${state}` : ""}`),
   getJob: (id: string) => call<JobDetail>(user, "GET", `/jobs/${id}`),
+  candidates: (jobId: string) => call<Candidate[]>(user, "GET", `/jobs/${jobId}/candidates`),
+  allocate: (jobId: string, driverId: string) =>
+    call<Allocation>(user, "POST", `/jobs/${jobId}/allocate`, { delivery_staff_id: driverId }),
+  reallocate: (jobId: string, driverId: string, reason: string) =>
+    call<Allocation>(user, "POST", `/jobs/${jobId}/reallocate`, { delivery_staff_id: driverId, reason }),
+  listSlots: () => call<AvailabilitySlot[]>(user, "GET", "/availability"),
+  declareSlot: (window: [string, string]) => call<AvailabilitySlot>(user, "POST", "/availability", { window }),
+  removeSlot: (id: string) => call<void>(user, "DELETE", `/availability/${id}`),
 });

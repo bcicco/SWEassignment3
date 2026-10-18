@@ -6,6 +6,7 @@ ROUTES = {
     "create-delivery-job": handlers.create_delivery_job,
     "notify-office-staff": handlers.notify_office_staff,
     "notify-customer": handlers.notify_customer,
+    "notify-driver": handlers.notify_driver,
     "audit": handlers.audit,
 }
 

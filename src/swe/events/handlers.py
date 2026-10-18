@@ -5,7 +5,7 @@ import logging
 from functools import cache
 
 from swe.app import CreateDeliveryJob, DeliveryManagementSystem
-from swe.domain.job import JobCreated
+from swe.domain.job import JobAllocated, JobCreated
 from swe.domain.request import (
     QuoteAccepted,
     QuoteIssued,
@@ -57,6 +57,16 @@ def notify_customer(event: QuoteIssued | RequestCancelled) -> None:
             )
         case RequestCancelled():
             log.info("NOTIFY customer: request %s cancelled", event.request_id)
+
+
+# the new driver gets the job; on a reallocation the previous one is told it's gone
+@handles(JobAllocated)
+def notify_driver(event: JobAllocated) -> None:
+    log.info("NOTIFY driver %s: job %s allocated to you", event.delivery_staff_id, event.job_id)
+    if event.previous_delivery_staff_id:
+        log.info(
+            "NOTIFY driver %s: job %s reallocated (%s)", event.previous_delivery_staff_id, event.job_id, event.reason
+        )
 
 
 @handles()

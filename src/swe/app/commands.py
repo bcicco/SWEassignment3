@@ -73,3 +73,17 @@ class RemoveSlot(Command):
     delivery_staff_id: str
     slot_id: str
     by: str
+
+
+# Task 1: office staff assigning a job to a driver, or moving it to another (subtask 5)
+class AllocateJob(Command):
+    job_id: str
+    delivery_staff_id: str
+    by: str
+
+
+class ReallocateJob(Command):
+    job_id: str
+    delivery_staff_id: str
+    reason: str = Field(min_length=1)
+    by: str
