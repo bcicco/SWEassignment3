@@ -9,7 +9,7 @@ from fastapi import Depends, Header, Request
 
 from swe.app import ForbiddenError
 from swe.domain.user import Customer as CustomerAccount
-from swe.domain.user import StaffMember, User
+from swe.domain.user import DeliveryStaff, StaffMember, User
 from swe.repo import NotFoundError
 
 
@@ -36,3 +36,4 @@ def is_customer(user: User) -> bool:
 CurrentUser = Annotated[User, Depends(current_user)]
 Customer = Annotated[CustomerAccount, Depends(_require(is_customer, "customers"))]
 Staff = Annotated[StaffMember, Depends(_require(lambda u: isinstance(u, StaffMember), "office staff"))]
+Driver = Annotated[DeliveryStaff, Depends(_require(lambda u: isinstance(u, DeliveryStaff), "delivery staff"))]

@@ -201,3 +201,27 @@ def test_customers_see_only_their_own_jobs(api):
     assert api.get("/jobs", headers=OTHER_CUSTOMER).json() == []
     assert api.get(f"/jobs/{job_id}", headers=OTHER_CUSTOMER).status_code == 403
     assert api.get("/jobs/nope", headers=STAFF).status_code == 404
+
+
+def test_drivers_manage_their_own_availability(api):
+    t = now().replace(minute=0, second=0, microsecond=0)
+    window = lambda start, end: [(t + timedelta(hours=start)).isoformat(), (t + timedelta(hours=end)).isoformat()]  # noqa: E731
+    response = api.post("/availability", json={"window": window(1, 5)}, headers=DRIVER)
+    assert response.status_code == 201, response.text
+    slot_id = response.json()["id"]
+    assert api.post("/availability", json={"window": window(4, 6)}, headers=DRIVER).status_code == 400  # overlaps
+    assert [s["id"] for s in api.get("/availability", headers=DRIVER).json()] == [slot_id]
+
+    # only drivers have availability
+    assert api.post("/availability", json={"window": window(1, 5)}, headers=STAFF).status_code == 403
+    assert api.get("/availability", headers=CUSTOMER).status_code == 403
+
+    # office staff see who's free for a pickup window
+    start, end = window(2, 3)
+    available = api.get("/drivers/available", params={"start": start, "end": end}, headers=STAFF)
+    assert [d["user_id"] for d in available.json()] == ["driver-1"]
+    assert api.get("/drivers/available", params={"start": start, "end": end}, headers=DRIVER).status_code == 403
+
+    assert api.delete(f"/availability/{slot_id}", headers=DRIVER).status_code == 204
+    assert api.get("/availability", headers=DRIVER).json() == []
+    assert api.delete(f"/availability/{slot_id}", headers=DRIVER).status_code == 404

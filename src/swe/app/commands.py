@@ -59,3 +59,17 @@ class CreateDeliveryJob(Command):
 class CancelRequest(Command):
     request_id: str
     by: str | None = None
+
+
+# Task 8: a driver declaring or removing a period they can work. Slots are never
+# edited; a change is a removal and a new declaration
+class DeclareSlot(Command):
+    delivery_staff_id: str
+    window: tuple[datetime, datetime]
+    by: str
+
+
+class RemoveSlot(Command):
+    delivery_staff_id: str
+    slot_id: str
+    by: str

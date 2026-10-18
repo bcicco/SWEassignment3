@@ -23,6 +23,11 @@ class NewRequest(BaseModel):
     dropoff_address: Address
 
 
+# a driver declares slots for themselves
+class NewSlot(BaseModel):
+    window: tuple[datetime, datetime]
+
+
 class NewQuote(BaseModel):
     price: Decimal
     eta_pickup: tuple[datetime, datetime]
