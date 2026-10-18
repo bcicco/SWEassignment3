@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from swe.api.identity import CurrentUser, Customer, Role, Staff
-from swe.api.models import NewQuote, NewRequest, RequestDetail
+from swe.api.models import JobDetail, JobSummary, NewQuote, NewRequest, RequestDetail
 from swe.app import (
     AcceptQuote,
     CancelRequest,
@@ -15,9 +15,8 @@ from swe.app import (
     IssueQuote,
     LogRequest,
     RejectQuote,
-    RequestQuoteRevision,
 )
-from swe.domain.job import DeliveryJob
+from swe.domain.job import DeliveryJob, JobStateName
 from swe.domain.request import DeliveryRequest, Quote, RequestStatus
 from swe.repo import ConflictError, NotFoundError
 
@@ -94,9 +93,30 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
     def reject_quote(request_id: str, quote_id: str, user: Customer) -> Quote:
         return dms.reject_quote(RejectQuote(request_id=request_id, quote_id=quote_id, customer_id=user.id))
 
-    @app.post("/requests/{request_id}/quotes/{quote_id}/revision")
-    def request_quote_revision(request_id: str, quote_id: str, user: Customer) -> Quote:
-        command = RequestQuoteRevision(request_id=request_id, quote_id=quote_id, customer_id=user.id)
-        return dms.request_quote_revision(command)
+    # customers see only their own jobs; staff see all of them
+    def visible_job(job_id: str, user: CurrentUser) -> DeliveryJob:
+        job = repo.get_job(job_id)
+        if user.role is Role.CUSTOMER and job.customer_id != user.id:
+            raise ForbiddenError("not your job")
+        return job
+
+    @app.get("/jobs")
+    def list_jobs(user: CurrentUser, state: JobStateName | None = None) -> list[JobSummary]:
+        if user.role is Role.CUSTOMER:
+            jobs = [j for j in repo.list_customer_jobs(user.id) if state in (None, j.state)]
+        else:
+            states = [state] if state else list(JobStateName)
+            jobs = sorted(
+                (j for s in states for j in repo.list_jobs_by_state(s)), key=lambda j: j.created_at, reverse=True
+            )
+        # one read per job for its route and contact; fine at this scale
+        return [JobSummary(job=j, request=repo.get_request(j.request_id)) for j in jobs]
+
+    @app.get("/jobs/{job_id}")
+    def get_job(job_id: str, user: CurrentUser) -> JobDetail:
+        job = visible_job(job_id, user)
+        return JobDetail(
+            job=job, request=repo.get_request(job.request_id), quote=repo.get_quote(job.request_id, job.quote_id)
+        )
 
     return app

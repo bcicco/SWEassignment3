@@ -105,13 +105,12 @@ def test_refused_rules_are_400(api):
     assert "not the current quote" in response.json()["detail"]
 
 
-def test_reject_revise_and_cancel(api):
+def test_reject_and_cancel(api):
     request_id = log(api)
     first = issue(api, request_id)
     assert api.post(f"/requests/{request_id}/quotes/{first}/reject", headers=CUSTOMER).json()["status"] == "rejected"
     second = issue(api, request_id)
-    response = api.post(f"/requests/{request_id}/quotes/{second}/revision", headers=CUSTOMER)
-    assert response.json()["status"] == "revision_requested"
+    assert api.post(f"/requests/{request_id}/quotes/{second}/revision", headers=CUSTOMER).status_code == 404
     assert api.post(f"/requests/{request_id}/cancel", headers=CUSTOMER).json()["status"] == "cancelled"
     assert api.post(f"/requests/{request_id}/cancel", headers=STAFF).status_code == 400
 
@@ -135,3 +134,33 @@ def test_list_filters_by_status(api):
         assert [r["request_id"] for r in api.get("/requests?status=open", headers=headers).json()] == [kept]
         listed = api.get("/requests", headers=headers).json()
         assert [r["request_id"] for r in listed] == [cancelled, kept]  # every status, newest first
+
+
+def accept(api, request_id, quote_id) -> str:
+    response = api.post(f"/requests/{request_id}/quotes/{quote_id}/accept", headers=CUSTOMER)
+    assert response.status_code == 201, response.text
+    return response.json()["job_id"]
+
+
+def test_accepted_request_becomes_a_listed_job(api):
+    request_id = log(api)
+    quote_id = issue(api, request_id, price="42")
+    job_id = accept(api, request_id, quote_id)
+
+    for headers in (CUSTOMER, STAFF):
+        [summary] = api.get("/jobs", headers=headers).json()
+        assert (summary["job"]["job_id"], summary["request"]["request_id"]) == (job_id, request_id)
+    assert [s["job"]["job_id"] for s in api.get("/jobs?state=unallocated", headers=STAFF).json()] == [job_id]
+    assert api.get("/jobs?state=delivered", headers=STAFF).json() == []
+
+    detail = api.get(f"/jobs/{job_id}", headers=CUSTOMER).json()
+    assert detail["job"]["customer_id"] == "cust-1"
+    assert (detail["quote"]["quote_id"], detail["quote"]["price"]) == (quote_id, "42")
+
+
+def test_customers_see_only_their_own_jobs(api):
+    request_id = log(api)
+    job_id = accept(api, request_id, issue(api, request_id))
+    assert api.get("/jobs", headers=OTHER_CUSTOMER).json() == []
+    assert api.get(f"/jobs/{job_id}", headers=OTHER_CUSTOMER).status_code == 403
+    assert api.get("/jobs/nope", headers=STAFF).status_code == 404

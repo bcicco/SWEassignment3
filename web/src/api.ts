@@ -5,7 +5,8 @@ export type Role = "customer" | "staff";
 export type User = { id: string; role: Role };
 
 export type RequestStatus = "open" | "accepted" | "cancelled";
-export type QuoteStatus = "pending" | "accepted" | "rejected" | "revision_requested" | "superseded";
+export type JobState = "unallocated" | "allocated" | "in_transit" | "on_hold" | "delivered" | "closed";
+export type QuoteStatus = "pending" | "accepted" | "rejected" | "superseded";
 export type ParcelSize = "small" | "medium" | "large";
 
 export type Address = { street: string; suburb: string; postcode: string };
@@ -50,6 +51,10 @@ export type HistoryEvent = {
 };
 
 export type RequestDetail = { request: DeliveryRequest; quotes: Quote[]; history: HistoryEvent[] };
+
+export type DeliveryJob = { job_id: string; request_id: string; quote_id: string; customer_id: string; created_at: string; state: JobState };
+export type JobSummary = { job: DeliveryJob; request: DeliveryRequest };
+export type JobDetail = JobSummary & { quote: Quote };
 
 export type NewRequest = {
   customer_id?: string | null;
@@ -96,6 +101,8 @@ export const api = (user: User) => ({
   logRequest: (body: NewRequest) => call<DeliveryRequest>(user, "POST", "/requests", body),
   cancel: (id: string) => call<DeliveryRequest>(user, "POST", `/requests/${id}/cancel`),
   issueQuote: (id: string, body: NewQuote) => call<Quote>(user, "POST", `/requests/${id}/quotes`, body),
-  respond: (id: string, quoteId: string, action: "accept" | "reject" | "revision") =>
-    call<unknown>(user, "POST", `/requests/${id}/quotes/${quoteId}/${action}`),
+  accept: (id: string, quoteId: string) => call<DeliveryJob>(user, "POST", `/requests/${id}/quotes/${quoteId}/accept`),
+  reject: (id: string, quoteId: string) => call<Quote>(user, "POST", `/requests/${id}/quotes/${quoteId}/reject`),
+  listJobs: (state?: JobState) => call<JobSummary[]>(user, "GET", `/jobs${state ? `?state=${state}` : ""}`),
+  getJob: (id: string) => call<JobDetail>(user, "GET", `/jobs/${id}`),
 });

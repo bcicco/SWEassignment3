@@ -4,14 +4,14 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from swe.domain.job import DeliveryJob
+from swe.domain.job import DeliveryJob, JobStateName
 from swe.domain.request import DeliveryRequest, Quote, RequestStatus
 from swe.domain.shared import HistoryEvent
 from swe.infra.aws import client
 from swe.infra.config import TABLE_NAME
 from swe.repo.schema import Index, ItemSchema
 from swe.repo.schemas import event_schema_for, schema_for
-from swe.repo.schemas.job import DELIVERY_JOB
+from swe.repo.schemas.job import DELIVERY_JOB, JOBS_BY_CUSTOMER, JOBS_BY_STATE
 from swe.repo.schemas.request import BY_CUSTOMER, BY_STATUS, DELIVERY_REQUEST, QUOTE
 from swe.repo.schemas.shared import HISTORY_EVENT
 
@@ -166,6 +166,12 @@ class Repository:
 
     def list_requests_by_status(self, status: RequestStatus) -> list[DeliveryRequest]:
         return [DELIVERY_REQUEST.from_item(i) for i in self._query_index(BY_STATUS, status=status)]
+
+    def list_customer_jobs(self, customer_id: str) -> list[DeliveryJob]:
+        return [DELIVERY_JOB.from_item(i) for i in self._query_index(JOBS_BY_CUSTOMER, customer_id=customer_id)]
+
+    def list_jobs_by_state(self, state: JobStateName) -> list[DeliveryJob]:
+        return [DELIVERY_JOB.from_item(i) for i in self._query_index(JOBS_BY_STATE, state=state)]
 
     def transaction(self) -> Transaction:
         return Transaction(self._dynamodb, self._table)

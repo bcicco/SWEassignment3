@@ -7,7 +7,6 @@ from swe.app.commands import (
     IssueQuote,
     LogRequest,
     RejectQuote,
-    RequestQuoteRevision,
 )
 from swe.app.errors import ForbiddenError
 from swe.domain.job import DeliveryJob
@@ -95,17 +94,6 @@ class DeliveryManagementSystem:
             self.repo.transaction()
             .update(quote, RESPONSE_FIELDS, where={"status": QuoteStatus.PENDING})
             .create(rejected)
-            .commit()
-        )
-        return quote
-
-    def request_quote_revision(self, command: RequestQuoteRevision) -> Quote:
-        request, quote = self._load_for_response(command.request_id, command.quote_id, command.customer_id)
-        requested = request.request_revision(quote, by=command.customer_id, at=self.clock())
-        (
-            self.repo.transaction()
-            .update(quote, RESPONSE_FIELDS, where={"status": QuoteStatus.PENDING})
-            .create(requested)
             .commit()
         )
         return quote

@@ -33,8 +33,3 @@ class QuoteAccepted(HistoryEvent):
 class QuoteRejected(HistoryEvent):
     event_type: Literal["quote_rejected"] = "quote_rejected"
     quote_id: str
-
-
-class QuoteRevisionRequested(HistoryEvent):
-    event_type: Literal["quote_revision_requested"] = "quote_revision_requested"
-    quote_id: str

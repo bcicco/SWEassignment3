@@ -7,6 +7,7 @@ from typing import Annotated, Union
 from pydantic import BaseModel, Field
 
 import swe.domain  # noqa: F401  registers every HistoryEvent subclass before the union below is built
+from swe.domain.job import DeliveryJob
 from swe.domain.request import DeliveryRequest, Quote
 from swe.domain.shared import Address, HistoryEvent, Parcel
 
@@ -37,3 +38,13 @@ class RequestDetail(BaseModel):
     request: DeliveryRequest
     quotes: list[Quote]  # newest first
     history: list[AnyHistoryEvent]  # oldest first
+
+
+# a job with the request it delivers, for listing
+class JobSummary(BaseModel):
+    job: DeliveryJob
+    request: DeliveryRequest
+
+
+class JobDetail(JobSummary):
+    quote: Quote  # the accepted terms

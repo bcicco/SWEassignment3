@@ -4,7 +4,6 @@ from swe.domain.request import (
     QuoteAccepted,
     QuoteIssued,
     QuoteRejected,
-    QuoteRevisionRequested,
     QuoteStatus,
     RequestCancelled,
     RequestLogged,
@@ -95,14 +94,6 @@ QUOTE_ACCEPTED = HISTORY_EVENT.extend(
 
 QUOTE_REJECTED = HISTORY_EVENT.extend(
     QuoteRejected,
-    {
-        "event_type": String,
-        "quote_id": String,
-    },
-)
-
-QUOTE_REVISION_REQUESTED = HISTORY_EVENT.extend(
-    QuoteRevisionRequested,
     {
         "event_type": String,
         "quote_id": String,

@@ -13,7 +13,6 @@ class QuoteStatus(StrEnum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     REJECTED = "rejected"
-    REVISION_REQUESTED = "revision_requested"
     SUPERSEDED = "superseded"
 
 
@@ -54,19 +53,16 @@ class Quote(BaseModel):
         self.responded_by = by
         self.responded_at = at
 
-    # creates the one unallocated job from the accepted terms
+    # creates the one unallocated job from the accepted terms; only the request's own
+    # customer may accept, so they own the job
     def accept(self, by: str, at: datetime) -> DeliveryJob:
         self._ensure_respondable(at)
         self._record_response(QuoteStatus.ACCEPTED, by, at)
-        return DeliveryJob(request_id=self.request_id, quote_id=self.quote_id, created_at=at)
+        return DeliveryJob(request_id=self.request_id, quote_id=self.quote_id, customer_id=by, created_at=at)
 
     def reject(self, by: str, at: datetime) -> None:
         self._ensure_respondable(at)
         self._record_response(QuoteStatus.REJECTED, by, at)
-
-    def request_revision(self, by: str, at: datetime) -> None:
-        self._ensure_respondable(at)
-        self._record_response(QuoteStatus.REVISION_REQUESTED, by, at)
 
     # an expired or answered quote can still be replaced; only an accepted one can't
     def supersede(self) -> None:

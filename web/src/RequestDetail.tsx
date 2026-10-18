@@ -5,7 +5,9 @@ import { usePolled } from "./usePolled";
 
 type Run = (action: () => Promise<unknown>) => Promise<boolean>;
 
-export function RequestDetail({ user, requestId, run }: { user: User; requestId: string; run: Run }) {
+type Props = { user: User; requestId: string; run: Run; onAccepted: (jobId: string) => void };
+
+export function RequestDetail({ user, requestId, run, onAccepted }: Props) {
   const load = useCallback(() => api(user).getRequest(requestId), [user, requestId]);
   const [detail, refresh] = usePolled<Detail>(load);
   if (!detail) return <div className="card">Loading…</div>;
@@ -80,11 +82,13 @@ export function RequestDetail({ user, requestId, run }: { user: User; requestId:
               </div>
               {live && !expired && user.role === "customer" && (
                 <div className="actions">
-                  <button className="primary" onClick={() => act(() => api(user).respond(request.request_id, q.quote_id, "accept"))}>
+                  <button
+                    className="primary"
+                    onClick={() => act(async () => onAccepted((await api(user).accept(request.request_id, q.quote_id)).job_id))}
+                  >
                     Accept
                   </button>
-                  <button onClick={() => act(() => api(user).respond(request.request_id, q.quote_id, "revision"))}>Ask for revision</button>
-                  <button onClick={() => act(() => api(user).respond(request.request_id, q.quote_id, "reject"))}>Reject</button>
+                  <button onClick={() => act(() => api(user).reject(request.request_id, q.quote_id))}>Reject</button>
                 </div>
               )}
             </div>

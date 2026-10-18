@@ -47,12 +47,6 @@ class RejectQuote(Command):
     customer_id: str
 
 
-class RequestQuoteRevision(Command):
-    request_id: str
-    quote_id: str
-    customer_id: str
-
-
 # A3: before acceptance only
 class CancelRequest(Command):
     request_id: str

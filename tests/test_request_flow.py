@@ -78,7 +78,7 @@ def test_invalid_quote_leaves_request_unchanged(request_):
     assert request_.current_quote_id is None
 
 
-def test_revision_supersedes_previous(request_):
+def test_new_quote_supersedes_previous(request_):
     q1, first = request_.issue_quote(**quote_args(), previous=None)
     assert first.supersedes is None
     q2, issued = request_.issue_quote(**quote_args(price=Decimal("45")), previous=q1)

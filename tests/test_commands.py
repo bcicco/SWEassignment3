@@ -11,7 +11,6 @@ from swe.app import (
     IssueQuote,
     LogRequest,
     RejectQuote,
-    RequestQuoteRevision,
 )
 from swe.domain.job import JobStateName
 from swe.domain.request import QuoteStatus, RequestStatus
@@ -230,17 +229,15 @@ def test_anonymous_request_cannot_be_accepted(dms):
         dms.accept_quote(AcceptQuote(request_id=request.request_id, quote_id=quote.quote_id, customer_id="cust-1"))
 
 
-def test_reject_and_revision(dms, repo, dynamodb):
+def test_reject_then_reissue(dms, repo, dynamodb):
     request = log(dms)
     q1 = issue(dms, request.request_id)
     dms.reject_quote(RejectQuote(request_id=request.request_id, quote_id=q1.quote_id, customer_id="cust-1"))
+    assert repo.get_quote(request.request_id, q1.quote_id).status is QuoteStatus.REJECTED
+    assert history(dynamodb, request.request_id)[-2:] == ["quote_issued", "quote_rejected"]
     q2 = issue(dms, request.request_id)
-    dms.request_quote_revision(
-        RequestQuoteRevision(request_id=request.request_id, quote_id=q2.quote_id, customer_id="cust-1")
-    )
     assert repo.get_quote(request.request_id, q1.quote_id).status is QuoteStatus.SUPERSEDED
-    assert repo.get_quote(request.request_id, q2.quote_id).status is QuoteStatus.REVISION_REQUESTED
-    assert history(dynamodb, request.request_id)[-2:] == ["quote_issued", "quote_revision_requested"]
+    assert repo.get_request(request.request_id).current_quote_id == q2.quote_id
 
 
 def test_cancel_then_refuse_quote(dms, repo):

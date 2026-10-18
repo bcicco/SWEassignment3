@@ -7,7 +7,6 @@ from swe.domain.request import (
     QuoteAccepted,
     QuoteIssued,
     QuoteRejected,
-    QuoteRevisionRequested,
     RequestCancelled,
     RequestLogged,
 )
@@ -18,15 +17,15 @@ log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)  # the Lambda runtime defaults to WARNING
 
 
-@handles(RequestLogged, QuoteAccepted, QuoteRejected, QuoteRevisionRequested)
-def notify_office_staff(event: RequestLogged | QuoteAccepted | QuoteRejected | QuoteRevisionRequested) -> None:
+@handles(RequestLogged, QuoteAccepted, QuoteRejected)
+def notify_office_staff(event: RequestLogged | QuoteAccepted | QuoteRejected) -> None:
     match event:
         case RequestLogged():
             log.info("NOTIFY office staff: request %s needs a quote", event.request_id)
         case QuoteAccepted():
             log.info("NOTIFY office staff: job %s needs allocation (quote %s)", event.job_id, event.quote_id)
-        case QuoteRejected() | QuoteRevisionRequested():
-            log.info("NOTIFY office staff: quote %s was %s", event.quote_id, event.event_type)
+        case QuoteRejected():
+            log.info("NOTIFY office staff: quote %s was rejected", event.quote_id)
 
 
 @handles(QuoteIssued, RequestCancelled)

@@ -9,7 +9,6 @@ from swe.domain.request.events import (
     QuoteAccepted,
     QuoteIssued,
     QuoteRejected,
-    QuoteRevisionRequested,
     RequestCancelled,
     RequestLogged,
 )
@@ -129,13 +128,6 @@ class DeliveryRequest(BaseModel):
         self._ensure_current(quote)
         quote.reject(by, at)
         return QuoteRejected(request_id=self.request_id, quote_id=quote.quote_id, created_by=by, created_at=at)
-
-    def request_revision(self, quote: Quote, by: str, at: datetime | None = None) -> QuoteRevisionRequested:
-        at = at or now()
-        self._ensure_open()
-        self._ensure_current(quote)
-        quote.request_revision(by, at)
-        return QuoteRevisionRequested(request_id=self.request_id, quote_id=quote.quote_id, created_by=by, created_at=at)
 
     # only before acceptance; afterwards it's a DeliveryIssue (A3)
     def cancel(self, by: str | None, at: datetime | None = None) -> RequestCancelled:

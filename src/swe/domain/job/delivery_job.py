@@ -21,5 +21,6 @@ class DeliveryJob(BaseModel):
     job_id: str = Field(default_factory=new_id, frozen=True)
     request_id: str = Field(frozen=True)
     quote_id: str = Field(frozen=True)
+    customer_id: str = Field(frozen=True)  # copied from the request so a customer can list their jobs
     created_at: datetime = Field(default_factory=now, frozen=True)
     state: JobStateName = JobStateName.UNALLOCATED

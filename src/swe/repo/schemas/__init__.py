@@ -13,7 +13,6 @@ SCHEMAS: dict[type, ItemSchema] = {
         request.QUOTE_ISSUED,
         request.QUOTE_ACCEPTED,
         request.QUOTE_REJECTED,
-        request.QUOTE_REVISION_REQUESTED,
         job.DELIVERY_JOB,
     ]
 }

@@ -106,7 +106,6 @@ def test_routes_declare_event_types():
         "request_logged",
         "quote_accepted",
         "quote_rejected",
-        "quote_revision_requested",
     ]
     assert ROUTES["notify-customer"].event_types == ["quote_issued", "request_cancelled"]
     assert ROUTES["audit"].event_types is None
