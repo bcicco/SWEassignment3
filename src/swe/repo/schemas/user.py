@@ -1,5 +1,5 @@
-from swe.domain.user import Customer, DeliveryStaff, StaffMember, StaffRole, User
-from swe.repo.schema import Enum, ItemSchema, Optional, String, Timestamp
+from swe.domain.user import Customer, DeliveryStaff, StaffMember, User
+from swe.repo.schema import ItemSchema, String, Timestamp
 
 USER = ItemSchema(
     User,
@@ -10,10 +10,9 @@ USER = ItemSchema(
         "name": String,
         "phone": String,
         "created_at": Timestamp,
-        "deactivated_at": Optional(Timestamp),
     },
 )
 
 CUSTOMER = USER.extend(Customer, {"kind": String})
-STAFF_MEMBER = USER.extend(StaffMember, {"kind": String, "role": Enum(StaffRole)})
+STAFF_MEMBER = USER.extend(StaffMember, {"kind": String})
 DELIVERY_STAFF = USER.extend(DeliveryStaff, {"kind": String})

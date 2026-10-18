@@ -2,7 +2,6 @@
 # handled by the matching DeliveryManagementSystem method
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -60,25 +59,3 @@ class CreateDeliveryJob(Command):
 class CancelRequest(Command):
     request_id: str
     by: str | None = None
-
-
-# a customer creating their own account, under the id the platform authenticated (A11)
-class RegisterCustomer(Command):
-    user_id: str
-    name: str
-    phone: str
-
-
-# a business owner onboarding staff with their role (Task 8; QA3.3)
-class OnboardStaff(Command):
-    user_id: str
-    name: str
-    phone: str
-    role: Literal["office_staff", "business_owner", "delivery_staff"]
-    by: str
-
-
-# the account is kept so its past records still resolve to a person (PR8)
-class DeactivateUser(Command):
-    user_id: str
-    by: str

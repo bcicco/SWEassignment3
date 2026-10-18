@@ -66,7 +66,7 @@ def test_every_model_round_trips():
 def test_every_user_kind_round_trips_by_kind():
     users = [
         Customer(user_id="cust-1", name="Sam", phone="0400000000"),
-        StaffMember(user_id="owner-1", name="Alex", phone="0411111111", role="business_owner", deactivated_at=T),
+        StaffMember(user_id="staff-1", name="Alex", phone="0411111111"),
         DeliveryStaff(user_id="driver-1", name="Lee", phone="0422222222"),
     ]
     for user in users:

@@ -4,14 +4,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from swe.api import create_app
-from swe.app import DeactivateUser, DeliveryManagementSystem, OnboardStaff, RegisterCustomer
+from swe.app import DeliveryManagementSystem
 from swe.domain.shared.ids import now
+from swe.domain.user import Customer, DeliveryStaff, StaffMember
 from swe.events import handlers
 
 CUSTOMER = {"X-User-Id": "cust-1"}
 OTHER_CUSTOMER = {"X-User-Id": "cust-2"}
 STAFF = {"X-User-Id": "staff-1"}
-OWNER = {"X-User-Id": "owner-1"}
 DRIVER = {"X-User-Id": "driver-1"}
 
 DETAILS = {
@@ -26,10 +26,13 @@ DETAILS = {
 @pytest.fixture
 def api(repo, monkeypatch):
     dms = DeliveryManagementSystem(repo)
-    for user_id in ["cust-1", "cust-2"]:
-        dms.register_customer(RegisterCustomer(user_id=user_id, name="Sam", phone="0400000000"))
-    for user_id, role in [("staff-1", "office_staff"), ("owner-1", "business_owner"), ("driver-1", "delivery_staff")]:
-        dms.onboard_staff(OnboardStaff(user_id=user_id, name="Alex", phone="0411111111", role=role, by="setup"))
+    for user in [
+        Customer(user_id="cust-1", name="Sam", phone="0400000000"),
+        Customer(user_id="cust-2", name="Jo", phone="0400000000"),
+        StaffMember(user_id="staff-1", name="Alex", phone="0411111111"),
+        DeliveryStaff(user_id="driver-1", name="Lee", phone="0422222222"),
+    ]:
+        dms.users.add(user)
     monkeypatch.setattr(handlers, "system", lambda: dms)  # for run_job_handler
     return TestClient(create_app(dms))
 
@@ -116,8 +119,6 @@ def test_identity_headers_are_required(api):
 
 
 def test_role_comes_from_the_account_not_the_client(api):
-    me = api.get("/me", headers=STAFF).json()
-    assert (me["kind"], me["role"]) == ("staff_member", "office_staff")
     # a client claiming a role it doesn't have gets nothing for it
     staff_claim = {"X-User-Id": "cust-1", "X-User-Role": "staff"}
     assert api.post(f"/requests/{log(api)}/quotes", json={}, headers=staff_claim).status_code == 403
@@ -126,33 +127,6 @@ def test_role_comes_from_the_account_not_the_client(api):
 
 def test_unknown_callers_are_refused(api):
     assert api.get("/requests", headers={"X-User-Id": "nobody"}).status_code == 403
-
-
-def test_customer_registers_themselves(api):
-    new = {"X-User-Id": "cust-3"}
-    assert api.get("/me", headers=new).status_code == 403
-    response = api.post("/customers", json={"name": "Jo", "phone": "0422222222"}, headers=new)
-    assert response.status_code == 201, response.text
-    assert api.get("/me", headers=new).json()["kind"] == "customer"
-    log(api, headers=new)
-    # the id already has an account
-    assert api.post("/customers", json={"name": "Jo", "phone": "0422222222"}, headers=new).status_code == 409
-
-
-def test_only_business_owners_administer_accounts(api):
-    body = {"user_id": "driver-2", "name": "Lee", "phone": "0433333333", "role": "delivery_staff"}
-    assert api.post("/staff", json=body, headers=STAFF).status_code == 403
-    assert api.post("/staff", json=body, headers=OWNER).json()["kind"] == "delivery_staff"
-    assert api.post("/users/driver-2/deactivate", headers=STAFF).status_code == 403
-    assert api.post("/users/driver-2/deactivate", headers=OWNER).json()["deactivated_at"] is not None
-
-
-def test_deactivated_accounts_are_refused(api):
-    request_id = log(api)
-    api.app.state.dms.deactivate_user(DeactivateUser(user_id="cust-1", by="owner-1"))
-    assert api.get("/me", headers=CUSTOMER).status_code == 403
-    assert api.get(f"/requests/{request_id}", headers=CUSTOMER).status_code == 403
-    assert api.get(f"/requests/{request_id}", headers=STAFF).status_code == 200  # their records remain (PR8)
 
 
 def test_refused_rules_are_400(api):

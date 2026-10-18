@@ -5,11 +5,8 @@ from swe.app.commands import (
     AcceptQuote,
     CancelRequest,
     CreateDeliveryJob,
-    DeactivateUser,
     IssueQuote,
     LogRequest,
-    OnboardStaff,
-    RegisterCustomer,
     RejectQuote,
 )
 from swe.app.errors import ForbiddenError
@@ -17,7 +14,7 @@ from swe.app.user_directory import UserDirectory
 from swe.domain.job import DeliveryJob
 from swe.domain.request import DeliveryRequest, Quote, QuoteAccepted, QuoteStatus, RequestStatus
 from swe.domain.shared.ids import now
-from swe.domain.user import DeliveryStaff, StaffMember, User
+from swe.domain.user import User
 from swe.repo import ConflictError, NotFoundError, Repository
 
 # held by SystemConfiguration in the design (A7)
@@ -44,21 +41,12 @@ class DeliveryManagementSystem:
         self.repo = repo or Repository()
         self.quote_valid_for = quote_valid_for
         self.clock = clock
-        self.users = users or UserDirectory(self.repo, clock)
+        self.users = users or UserDirectory(self.repo)
 
-    # the active account behind an identity the platform authenticated (A11).
-    # NotFoundError if there's no account, ForbiddenError if it's deactivated
+    # the account behind an identity the platform authenticated (A11);
+    # NotFoundError if there's none
     def identify(self, user_id: str) -> User:
-        return self.users.find_active(user_id)
-
-    def register_customer(self, command: RegisterCustomer) -> User:
-        return self.users.register_customer(command)
-
-    def onboard_staff(self, command: OnboardStaff) -> StaffMember | DeliveryStaff:
-        return self.users.onboard_staff(command)
-
-    def deactivate_user(self, command: DeactivateUser) -> User:
-        return self.users.deactivate(command)
+        return self.users.find(user_id)
 
     def log_request(self, command: LogRequest) -> DeliveryRequest:
         request, logged = DeliveryRequest.log(**command.model_dump(), created_at=self.clock())

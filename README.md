@@ -34,8 +34,8 @@ uv run python scripts/dev_ui.py         # dev UI on :8000 (add --memory to skip 
 A React app (Vite + TypeScript) in `web/`, talking to the HTTP API on :8001. There's no login:
 the header picks which account you're acting as, sent in the `X-User-Id` header. The API looks
 it up in the UserDirectory, so the id must be an existing, active account and its role comes
-from the account: `cust-1`, `cust-2` (customers), `staff-1` (office staff), `owner-1`
-(business owner), `driver-1` (delivery staff), from `scripts/seed_users.py`.
+from the account: `cust-1`, `cust-2` (customers), `staff-1` (office staff), `driver-1`
+(delivery staff), from `scripts/seed_users.py`.
 
 ```sh
 cd web && npm install    # once

@@ -1,8 +1,7 @@
 import pytest
 
-from swe.app import DeactivateUser, DeliveryManagementSystem, ForbiddenError, OnboardStaff, RegisterCustomer
-from swe.domain.shared import DomainError
-from swe.domain.user import Customer, DeliveryStaff, StaffMember, StaffRole
+from swe.app import DeliveryManagementSystem
+from swe.domain.user import Customer, DeliveryStaff, StaffMember
 from swe.repo import ConflictError, NotFoundError
 
 
@@ -11,67 +10,18 @@ def dms(repo):
     return DeliveryManagementSystem(repo)
 
 
-def register(dms, user_id="cust-1"):
-    return dms.register_customer(RegisterCustomer(user_id=user_id, name="Sam", phone="0400000000"))
-
-
-def onboard(dms, user_id, role):
-    return dms.onboard_staff(OnboardStaff(user_id=user_id, name="Alex", phone="0411111111", role=role, by="owner-1"))
-
-
-def test_register_and_find(dms):
-    register(dms)
-    found = dms.users.find("cust-1")
-    assert isinstance(found, Customer)
-    assert (found.name, found.is_active) == ("Sam", True)
+@pytest.mark.parametrize("kind", [Customer, StaffMember, DeliveryStaff])
+def test_accounts_load_as_their_kind(dms, kind):
+    dms.users.add(kind(user_id="u-1", name="Sam", phone="0400000000"))
+    found = dms.identify("u-1")
+    assert type(found) is kind
+    assert found.name == "Sam"
 
 
 def test_an_id_has_one_account(dms):
-    register(dms)
+    dms.users.add(Customer(user_id="u-1", name="Sam", phone="0400000000"))
     with pytest.raises(ConflictError):
-        register(dms)
-    with pytest.raises(ConflictError):
-        onboard(dms, "cust-1", "office_staff")
-
-
-@pytest.mark.parametrize(
-    ("role", "kind", "staff_role"),
-    [
-        ("office_staff", StaffMember, StaffRole.OFFICE_STAFF),
-        ("business_owner", StaffMember, StaffRole.BUSINESS_OWNER),
-        ("delivery_staff", DeliveryStaff, None),
-    ],
-)
-def test_onboarded_staff_load_as_their_kind(dms, role, kind, staff_role):
-    onboard(dms, "staff-1", role)
-    found = dms.users.find("staff-1")
-    assert type(found) is kind
-    assert getattr(found, "role", None) == staff_role
-
-
-def test_deactivation_keeps_the_account(dms):
-    register(dms)
-    dms.deactivate_user(DeactivateUser(user_id="cust-1", by="owner-1"))
-    found = dms.users.find("cust-1")
-    assert not found.is_active  # still there for past records (PR8)
-    with pytest.raises(ForbiddenError):
-        dms.identify("cust-1")
-
-
-def test_deactivating_twice_is_refused(dms):
-    register(dms)
-    dms.deactivate_user(DeactivateUser(user_id="cust-1", by="owner-1"))
-    with pytest.raises(DomainError):
-        dms.deactivate_user(DeactivateUser(user_id="cust-1", by="owner-1"))
-
-
-def test_concurrent_deactivation_conflicts(dms):
-    register(dms)
-    loaded = dms.users.find("cust-1")
-    dms.deactivate_user(DeactivateUser(user_id="cust-1", by="owner-1"))
-    loaded.deactivate()
-    with pytest.raises(ConflictError):
-        dms.repo.transaction().update(loaded, ["deactivated_at"], where={"deactivated_at": None}).commit()
+        dms.users.add(StaffMember(user_id="u-1", name="Alex", phone="0411111111"))
 
 
 def test_unknown_user(dms):

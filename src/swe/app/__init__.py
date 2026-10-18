@@ -3,11 +3,8 @@ from swe.app.commands import (
     CancelRequest,
     Command,
     CreateDeliveryJob,
-    DeactivateUser,
     IssueQuote,
     LogRequest,
-    OnboardStaff,
-    RegisterCustomer,
     RejectQuote,
 )
 from swe.app.delivery_management_system import DeliveryManagementSystem

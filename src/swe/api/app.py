@@ -5,23 +5,19 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from swe.api.identity import BusinessOwner, CallerId, CurrentUser, Customer, Staff, is_customer
-from swe.api.models import JobDetail, JobSummary, NewCustomer, NewQuote, NewRequest, NewStaff, RequestDetail
+from swe.api.identity import CurrentUser, Customer, Staff, is_customer
+from swe.api.models import JobDetail, JobSummary, NewQuote, NewRequest, RequestDetail
 from swe.app import (
     AcceptQuote,
     CancelRequest,
-    DeactivateUser,
     DeliveryManagementSystem,
     ForbiddenError,
     IssueQuote,
     LogRequest,
-    OnboardStaff,
-    RegisterCustomer,
     RejectQuote,
 )
 from swe.domain.job import DeliveryJob, JobStateName
 from swe.domain.request import DeliveryRequest, Quote, QuoteAccepted, RequestStatus
-from swe.domain.user import AnyUser
 from swe.repo import ConflictError, NotFoundError
 
 # the React dev server (Vite's default port)
@@ -49,24 +45,6 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
             return JSONResponse(status_code=code, content={"detail": str(exc)})
 
         app.add_exception_handler(error, handle)
-
-    # accounts (§4.2 UserDirectory)
-    @app.get("/me")
-    def me(user: CurrentUser) -> AnyUser:
-        return user
-
-    # a customer creating an account for the identity they authenticated as
-    @app.post("/customers", status_code=status.HTTP_201_CREATED)
-    def register_customer(body: NewCustomer, user_id: CallerId) -> AnyUser:
-        return dms.register_customer(RegisterCustomer(user_id=user_id, **body.model_dump()))
-
-    @app.post("/staff", status_code=status.HTTP_201_CREATED)
-    def onboard_staff(body: NewStaff, user: BusinessOwner) -> AnyUser:
-        return dms.onboard_staff(OnboardStaff(**body.model_dump(), by=user.user_id))
-
-    @app.post("/users/{user_id}/deactivate")
-    def deactivate_user(user_id: str, user: BusinessOwner) -> AnyUser:
-        return dms.deactivate_user(DeactivateUser(user_id=user_id, by=user.user_id))
 
     # customers see only their own requests; staff see all of them
     def visible_request(request_id: str, user: CurrentUser) -> DeliveryRequest:

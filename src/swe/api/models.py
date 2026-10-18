@@ -2,7 +2,7 @@
 # the URL names) are left out, so a client can't set them
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated, Literal, Union
+from typing import Annotated, Union
 
 from pydantic import BaseModel, Field
 
@@ -21,19 +21,6 @@ class NewRequest(BaseModel):
     parcels: list[Parcel] = Field(min_length=1)
     pickup_address: Address
     dropoff_address: Address
-
-
-# the id is the caller's authenticated identity, from the request headers
-class NewCustomer(BaseModel):
-    name: str
-    phone: str
-
-
-class NewStaff(BaseModel):
-    user_id: str
-    name: str
-    phone: str
-    role: Literal["office_staff", "business_owner", "delivery_staff"]
 
 
 class NewQuote(BaseModel):
