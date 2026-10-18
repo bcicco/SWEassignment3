@@ -8,7 +8,7 @@ from swe.domain.job import DeliveryJob
 from swe.domain.request import DeliveryRequest
 from swe.domain.shared import HistoryEvent
 from swe.domain.shared.ids import now
-from swe.domain.user import Customer, DeliveryStaff, StaffMember
+from swe.domain.user import AvailabilitySlot, Customer, DeliveryStaff, StaffMember
 from swe.repo.schema import ItemSchema, Optional, String
 from swe.repo.schemas import EVENT_SCHEMAS, event_schema_for, schema_for, user_schema_for
 from swe.repo.schemas.job import DELIVERY_JOB
@@ -73,6 +73,14 @@ def test_every_user_kind_round_trips_by_kind():
         item = schema_for(user).to_item(user)
         assert item["pk"] == {"S": f"USER#{user.user_id}"}
         assert user_schema_for(item).from_item(item) == user
+
+
+def test_availability_slot_is_stored_with_its_driver_in_start_order():
+    slot = AvailabilitySlot(delivery_staff_id="driver-1", window=(T, T + timedelta(hours=4)), created_by="driver-1")
+    item = schema_for(slot).to_item(slot)
+    assert item["pk"] == {"S": "USER#driver-1"}
+    assert item["sk"] == {"S": f"SLOT#{T.isoformat()}#{slot.id}"}
+    assert schema_for(slot).from_item(item) == slot
 
 
 def test_items_use_dynamodb_types():
