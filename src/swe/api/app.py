@@ -5,19 +5,23 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from swe.api.identity import CurrentUser, Customer, Role, Staff
-from swe.api.models import JobDetail, JobSummary, NewQuote, NewRequest, RequestDetail
+from swe.api.identity import BusinessOwner, CallerId, CurrentUser, Customer, Staff, is_customer
+from swe.api.models import JobDetail, JobSummary, NewCustomer, NewQuote, NewRequest, NewStaff, RequestDetail
 from swe.app import (
     AcceptQuote,
     CancelRequest,
+    DeactivateUser,
     DeliveryManagementSystem,
     ForbiddenError,
     IssueQuote,
     LogRequest,
+    OnboardStaff,
+    RegisterCustomer,
     RejectQuote,
 )
 from swe.domain.job import DeliveryJob, JobStateName
 from swe.domain.request import DeliveryRequest, Quote, QuoteAccepted, RequestStatus
+from swe.domain.user import AnyUser
 from swe.repo import ConflictError, NotFoundError
 
 # the React dev server (Vite's default port)
@@ -36,6 +40,7 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
     dms = dms or DeliveryManagementSystem()
     repo = dms.repo
     app = FastAPI(title="YOWD Delivery Management System")
+    app.state.dms = dms  # identity.current_user finds callers through it
     app.add_middleware(CORSMiddleware, allow_origins=CLIENT_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
     for error, code in ERROR_STATUSES:
@@ -45,17 +50,35 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
 
         app.add_exception_handler(error, handle)
 
+    # accounts (§4.2 UserDirectory)
+    @app.get("/me")
+    def me(user: CurrentUser) -> AnyUser:
+        return user
+
+    # a customer creating an account for the identity they authenticated as
+    @app.post("/customers", status_code=status.HTTP_201_CREATED)
+    def register_customer(body: NewCustomer, user_id: CallerId) -> AnyUser:
+        return dms.register_customer(RegisterCustomer(user_id=user_id, **body.model_dump()))
+
+    @app.post("/staff", status_code=status.HTTP_201_CREATED)
+    def onboard_staff(body: NewStaff, user: BusinessOwner) -> AnyUser:
+        return dms.onboard_staff(OnboardStaff(**body.model_dump(), by=user.user_id))
+
+    @app.post("/users/{user_id}/deactivate")
+    def deactivate_user(user_id: str, user: BusinessOwner) -> AnyUser:
+        return dms.deactivate_user(DeactivateUser(user_id=user_id, by=user.user_id))
+
     # customers see only their own requests; staff see all of them
     def visible_request(request_id: str, user: CurrentUser) -> DeliveryRequest:
         request = repo.get_request(request_id)
-        if user.role is Role.CUSTOMER and request.customer_id != user.id:
+        if is_customer(user) and request.customer_id != user.user_id:
             raise ForbiddenError("not your request")
         return request
 
     @app.get("/requests")
     def list_requests(user: CurrentUser, status: RequestStatus | None = None) -> list[DeliveryRequest]:
-        if user.role is Role.CUSTOMER:  # a customer has few requests, so filter them here
-            return [r for r in repo.list_customer_requests(user.id) if status in (None, r.status)]
+        if is_customer(user):  # a customer has few requests, so filter them here
+            return [r for r in repo.list_customer_requests(user.user_id) if status in (None, r.status)]
         statuses = [status] if status else list(RequestStatus)
         requests = [r for s in statuses for r in repo.list_requests_by_status(s)]
         return sorted(requests, key=lambda r: r.created_at, reverse=True)
@@ -63,10 +86,10 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
     @app.post("/requests", status_code=status.HTTP_201_CREATED)
     def log_request(body: NewRequest, user: CurrentUser) -> DeliveryRequest:
         details = body.model_dump(exclude={"customer_id"})
-        if user.role is Role.CUSTOMER:
-            command = LogRequest(**details, customer_id=user.id)
+        if is_customer(user):
+            command = LogRequest(**details, customer_id=user.user_id)
         else:
-            command = LogRequest(**details, customer_id=body.customer_id, logged_by=user.id)
+            command = LogRequest(**details, customer_id=body.customer_id, logged_by=user.user_id)
         return dms.log_request(command)
 
     @app.get("/requests/{request_id}")
@@ -78,33 +101,33 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
     @app.post("/requests/{request_id}/cancel")
     def cancel_request(request_id: str, user: CurrentUser) -> DeliveryRequest:
         visible_request(request_id, user)
-        return dms.cancel_request(CancelRequest(request_id=request_id, by=user.id))
+        return dms.cancel_request(CancelRequest(request_id=request_id, by=user.user_id))
 
     @app.post("/requests/{request_id}/quotes", status_code=status.HTTP_201_CREATED)
     def issue_quote(request_id: str, body: NewQuote, user: Staff) -> Quote:
-        return dms.issue_quote(IssueQuote(request_id=request_id, staff_id=user.id, **body.model_dump()))
+        return dms.issue_quote(IssueQuote(request_id=request_id, staff_id=user.user_id, **body.model_dump()))
 
     # the customer's responses; DeliveryManagementSystem checks it's their request
     # 202: the job (with the returned job_id) is created moments later by an event handler
     @app.post("/requests/{request_id}/quotes/{quote_id}/accept", status_code=status.HTTP_202_ACCEPTED)
     def accept_quote(request_id: str, quote_id: str, user: Customer) -> QuoteAccepted:
-        return dms.accept_quote(AcceptQuote(request_id=request_id, quote_id=quote_id, customer_id=user.id))
+        return dms.accept_quote(AcceptQuote(request_id=request_id, quote_id=quote_id, customer_id=user.user_id))
 
     @app.post("/requests/{request_id}/quotes/{quote_id}/reject")
     def reject_quote(request_id: str, quote_id: str, user: Customer) -> Quote:
-        return dms.reject_quote(RejectQuote(request_id=request_id, quote_id=quote_id, customer_id=user.id))
+        return dms.reject_quote(RejectQuote(request_id=request_id, quote_id=quote_id, customer_id=user.user_id))
 
     # customers see only their own jobs; staff see all of them
     def visible_job(job_id: str, user: CurrentUser) -> DeliveryJob:
         job = repo.get_job(job_id)
-        if user.role is Role.CUSTOMER and job.customer_id != user.id:
+        if is_customer(user) and job.customer_id != user.user_id:
             raise ForbiddenError("not your job")
         return job
 
     @app.get("/jobs")
     def list_jobs(user: CurrentUser, state: JobStateName | None = None) -> list[JobSummary]:
-        if user.role is Role.CUSTOMER:
-            jobs = [j for j in repo.list_customer_jobs(user.id) if state in (None, j.state)]
+        if is_customer(user):
+            jobs = [j for j in repo.list_customer_jobs(user.user_id) if state in (None, j.state)]
         else:
             states = [state] if state else list(JobStateName)
             jobs = sorted(

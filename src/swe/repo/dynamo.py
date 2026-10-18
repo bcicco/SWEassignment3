@@ -7,13 +7,15 @@ from pydantic import BaseModel
 from swe.domain.job import DeliveryJob, JobStateName
 from swe.domain.request import DeliveryRequest, Quote, RequestStatus
 from swe.domain.shared import HistoryEvent
+from swe.domain.user import User
 from swe.infra.aws import client
 from swe.infra.config import TABLE_NAME
 from swe.repo.schema import Index, ItemSchema
-from swe.repo.schemas import event_schema_for, schema_for
+from swe.repo.schemas import event_schema_for, schema_for, user_schema_for
 from swe.repo.schemas.job import DELIVERY_JOB, JOBS_BY_CUSTOMER, JOBS_BY_STATE
 from swe.repo.schemas.request import BY_CUSTOMER, BY_STATUS, DELIVERY_REQUEST, QUOTE
 from swe.repo.schemas.shared import HISTORY_EVENT
+from swe.repo.schemas.user import USER
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -112,12 +114,15 @@ class Repository:
         self._dynamodb = dynamodb or client("dynamodb")
         self._table = table
 
-    def _get(self, schema: ItemSchema[M], **ids) -> M:
+    def _get_item(self, schema: ItemSchema, **ids) -> dict:
         key = schema.key(**ids)
         item = self._dynamodb.get_item(TableName=self._table, Key=key, ConsistentRead=True).get("Item")
         if item is None:
             raise NotFoundError(f"no {schema.model.__name__} at {key['pk']['S']} / {key['sk']['S']}")
-        return schema.from_item(item)
+        return item
+
+    def _get(self, schema: ItemSchema[M], **ids) -> M:
+        return schema.from_item(self._get_item(schema, **ids))
 
     def get_request(self, request_id: str) -> DeliveryRequest:
         return self._get(DELIVERY_REQUEST, request_id=request_id)
@@ -127,6 +132,11 @@ class Repository:
 
     def get_job(self, job_id: str) -> DeliveryJob:
         return self._get(DELIVERY_JOB, job_id=job_id)
+
+    # a Customer, StaffMember or DeliveryStaff, whichever the stored kind is
+    def get_user(self, user_id: str) -> User:
+        item = self._get_item(USER, user_id=user_id)
+        return user_schema_for(item).from_item(item)
 
     # the items in a request's partition whose sort key starts with the schema's prefix
     def _query_partition(self, request_id: str, schema: ItemSchema) -> list[dict]:

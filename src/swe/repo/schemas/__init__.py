@@ -1,7 +1,7 @@
-# every stored type's schema, found by model class (or by event_type for events)
+# every stored type's schema, found by model class (or by event_type for events, kind for users)
 from swe.domain.shared import HistoryEvent
 from swe.repo.schema import ItemSchema
-from swe.repo.schemas import job, request
+from swe.repo.schemas import job, request, user
 
 SCHEMAS: dict[type, ItemSchema] = {
     schema.model: schema
@@ -15,11 +15,20 @@ SCHEMAS: dict[type, ItemSchema] = {
         request.QUOTE_REJECTED,
         job.DELIVERY_JOB,
         job.JOB_CREATED,
+        user.CUSTOMER,
+        user.STAFF_MEMBER,
+        user.DELIVERY_STAFF,
     ]
 }
 
 EVENT_SCHEMAS: dict[str, ItemSchema] = {
     cls.TYPE: SCHEMAS[cls] for cls in HistoryEvent.registry.values() if cls in SCHEMAS
+}
+
+
+USER_SCHEMAS: dict[str, ItemSchema] = {
+    schema.model.model_fields["kind"].default: schema
+    for schema in [user.CUSTOMER, user.STAFF_MEMBER, user.DELIVERY_STAFF]
 }
 
 
@@ -36,3 +45,11 @@ def event_schema_for(item: dict) -> ItemSchema:
     if event_type not in EVENT_SCHEMAS:
         raise ValueError(f"no schema for event_type {event_type!r}")
     return EVENT_SCHEMAS[event_type]
+
+
+# a stored user item, chosen by its kind
+def user_schema_for(item: dict) -> ItemSchema:
+    kind = item.get("kind", {}).get("S")
+    if kind not in USER_SCHEMAS:
+        raise ValueError(f"no schema for user kind {kind!r}")
+    return USER_SCHEMAS[kind]

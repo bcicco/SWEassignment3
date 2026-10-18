@@ -2,6 +2,7 @@
 // at /docs; there's no login, so every call says who it's acting as
 
 export type Role = "customer" | "staff";
+// role only picks which screens to show; the API takes it from the account, not the client
 export type User = { id: string; role: Role };
 
 export type RequestStatus = "open" | "accepted" | "cancelled";
@@ -83,7 +84,7 @@ const BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8001";
 async function call<T>(user: User, method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   const response = await fetch(BASE + path, {
     method,
-    headers: { "X-User-Id": user.id, "X-User-Role": user.role, "Content-Type": "application/json" },
+    headers: { "X-User-Id": user.id, "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await response.json();

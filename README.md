@@ -19,6 +19,7 @@ LocalStack auth token (the free Hobby tier works): copy `.env.example` to `.env`
 ```sh
 docker compose up -d                    # 1. LocalStack on :4566 (state is in memory; re-bootstrap after restarting)
 uv run python -m swe.infra.bootstrap    # 2. build the Lambda zip and deploy everything (re-run to redeploy code)
+uv run python scripts/seed_users.py     #    create the accounts below (re-run after restarting LocalStack)
 uv run python scripts/demo.py           # 3. write a request, quote and acceptance
 uv run python scripts/logs.py           # 4. see what each Lambda did
 uv run pytest                           # tests, including the coding standard (no LocalStack needed)
@@ -31,8 +32,10 @@ uv run python scripts/dev_ui.py         # dev UI on :8000 (add --memory to skip 
 ## Web client
 
 A React app (Vite + TypeScript) in `web/`, talking to the HTTP API on :8001. There's no login:
-the header picks who you're acting as (a customer or office staff), which the API takes from
-the `X-User-Id` / `X-User-Role` headers.
+the header picks which account you're acting as, sent in the `X-User-Id` header. The API looks
+it up in the UserDirectory, so the id must be an existing, active account and its role comes
+from the account: `cust-1`, `cust-2` (customers), `staff-1` (office staff), `owner-1`
+(business owner), `driver-1` (delivery staff), from `scripts/seed_users.py`.
 
 ```sh
 cd web && npm install    # once

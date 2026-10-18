@@ -8,8 +8,9 @@ from swe.domain.job import DeliveryJob
 from swe.domain.request import DeliveryRequest
 from swe.domain.shared import HistoryEvent
 from swe.domain.shared.ids import now
+from swe.domain.user import Customer, DeliveryStaff, StaffMember
 from swe.repo.schema import ItemSchema, Optional, String
-from swe.repo.schemas import EVENT_SCHEMAS, event_schema_for, schema_for
+from swe.repo.schemas import EVENT_SCHEMAS, event_schema_for, schema_for, user_schema_for
 from swe.repo.schemas.job import DELIVERY_JOB
 from swe.repo.schemas.request import DELIVERY_REQUEST, QUOTE, QUOTE_ISSUED
 
@@ -60,6 +61,18 @@ def test_every_model_round_trips():
     for model in [request, *quotes, job, *events]:
         schema = schema_for(model)
         assert schema.from_item(schema.to_item(model)) == model
+
+
+def test_every_user_kind_round_trips_by_kind():
+    users = [
+        Customer(user_id="cust-1", name="Sam", phone="0400000000"),
+        StaffMember(user_id="owner-1", name="Alex", phone="0411111111", role="business_owner", deactivated_at=T),
+        DeliveryStaff(user_id="driver-1", name="Lee", phone="0422222222"),
+    ]
+    for user in users:
+        item = schema_for(user).to_item(user)
+        assert item["pk"] == {"S": f"USER#{user.user_id}"}
+        assert user_schema_for(item).from_item(item) == user
 
 
 def test_items_use_dynamodb_types():
