@@ -62,6 +62,10 @@ class _Window(Codec):
         start, end = (Timestamp.decode(v) for v in attribute["L"])
         return start, end
 
+    # so key templates can use "{window[0]}" for the start
+    def key_part(self, value: tuple[datetime, datetime]) -> tuple[str, str]:
+        return value[0].isoformat(), value[1].isoformat()
+
 
 String, Number, Timestamp, Window = _String(), _Number(), _Timestamp(), _Window()
 

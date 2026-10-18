@@ -18,6 +18,7 @@ SCHEMAS: dict[type, ItemSchema] = {
         user.CUSTOMER,
         user.STAFF_MEMBER,
         user.DELIVERY_STAFF,
+        user.AVAILABILITY_SLOT,
     ]
 }
 
