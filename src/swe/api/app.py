@@ -1,23 +1,28 @@
 # Commands go through DeliveryManagementSystem, which enforces the business rules; reads
 # go straight to the repository. Run with:
 #   uv run uvicorn swe.api:create_app --factory --reload
+from datetime import datetime
+
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from swe.api.identity import CurrentUser, Customer, Staff, is_customer
-from swe.api.models import JobDetail, JobSummary, NewQuote, NewRequest, RequestDetail
+from swe.api.identity import CurrentUser, Customer, Driver, Staff, is_customer
+from swe.api.models import JobDetail, JobSummary, NewQuote, NewRequest, NewSlot, RequestDetail
 from swe.app import (
     AcceptQuote,
     CancelRequest,
+    DeclareSlot,
     DeliveryManagementSystem,
     ForbiddenError,
     IssueQuote,
     LogRequest,
     RejectQuote,
+    RemoveSlot,
 )
 from swe.domain.job import DeliveryJob, JobStateName
 from swe.domain.request import DeliveryRequest, Quote, QuoteAccepted, RequestStatus
+from swe.domain.user import AvailabilitySlot, DeliveryStaff
 from swe.repo import ConflictError, NotFoundError
 
 # the React dev server (Vite's default port)
@@ -45,6 +50,24 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
             return JSONResponse(status_code=code, content={"detail": str(exc)})
 
         app.add_exception_handler(error, handle)
+
+    # a driver's own availability (Task 8)
+    @app.get("/availability")
+    def list_slots(user: Driver) -> list[AvailabilitySlot]:
+        return dms.roster.slots_of(user.user_id)
+
+    @app.post("/availability", status_code=status.HTTP_201_CREATED)
+    def declare_slot(body: NewSlot, user: Driver) -> AvailabilitySlot:
+        return dms.declare_slot(DeclareSlot(delivery_staff_id=user.user_id, window=body.window, by=user.user_id))
+
+    @app.delete("/availability/{slot_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def remove_slot(slot_id: str, user: Driver) -> None:
+        dms.remove_slot(RemoveSlot(delivery_staff_id=user.user_id, slot_id=slot_id, by=user.user_id))
+
+    # drivers free for a whole pickup window, for office staff allocating a job (Task 1)
+    @app.get("/drivers/available")
+    def available_drivers(start: datetime, end: datetime, user: Staff) -> list[DeliveryStaff]:
+        return dms.roster.available_for((start, end))
 
     # customers see only their own requests; staff see all of them
     def visible_request(request_id: str, user: CurrentUser) -> DeliveryRequest:

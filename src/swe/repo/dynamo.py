@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from swe.domain.job import DeliveryJob, JobStateName
 from swe.domain.request import DeliveryRequest, Quote, RequestStatus
 from swe.domain.shared import HistoryEvent
-from swe.domain.user import DeliveryStaff, User
+from swe.domain.user import AvailabilitySlot, DeliveryStaff, User
 from swe.infra.aws import client
 from swe.infra.config import TABLE_NAME
 from swe.repo.schema import Index, ItemSchema
@@ -15,7 +15,7 @@ from swe.repo.schemas import event_schema_for, schema_for, user_schema_for
 from swe.repo.schemas.job import DELIVERY_JOB, JOBS_BY_CUSTOMER, JOBS_BY_STATE
 from swe.repo.schemas.request import BY_CUSTOMER, BY_STATUS, DELIVERY_REQUEST, QUOTE
 from swe.repo.schemas.shared import HISTORY_EVENT
-from swe.repo.schemas.user import DELIVERY_STAFF, USER, USERS_BY_KIND
+from swe.repo.schemas.user import AVAILABILITY_SLOT, DELIVERY_STAFF, USER, USERS_BY_KIND
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -99,6 +99,19 @@ class Transaction:
         self._items.append({"Update": update_item})
         return self
 
+    # removes an item loaded earlier; fails if it's already gone
+    def delete(self, model: BaseModel) -> "Transaction":
+        self._items.append(
+            {
+                "Delete": {
+                    "TableName": self._table,
+                    "Key": schema_for(model).key_of(model),
+                    "ConditionExpression": "attribute_exists(pk)",
+                }
+            }
+        )
+        return self
+
     def commit(self) -> None:
         try:
             self._dynamodb.transact_write_items(TransactItems=self._items)
@@ -138,13 +151,13 @@ class Repository:
         item = self._get_item(USER, user_id=user_id)
         return user_schema_for(item).from_item(item)
 
-    # the items in a request's partition whose sort key starts with the schema's prefix
-    def _query_partition(self, request_id: str, schema: ItemSchema) -> list[dict]:
+    # the items in a partition (e.g. a request's) whose sort key starts with the schema's prefix
+    def _query_partition(self, pk: dict, schema: ItemSchema) -> list[dict]:
         pages = self._dynamodb.get_paginator("query").paginate(
             TableName=self._table,
             KeyConditionExpression="pk = :pk AND begins_with(sk, :prefix)",
             ExpressionAttributeValues={
-                ":pk": DELIVERY_REQUEST.key(request_id=request_id)["pk"],
+                ":pk": pk,
                 ":prefix": {"S": schema.sk_prefix},
             },
             ConsistentRead=True,
@@ -152,11 +165,13 @@ class Repository:
         return [item for page in pages for item in page["Items"]]
 
     def list_quotes(self, request_id: str) -> list[Quote]:
-        return [QUOTE.from_item(item) for item in self._query_partition(request_id, QUOTE)]
+        items = self._query_partition(DELIVERY_REQUEST.key(request_id=request_id)["pk"], QUOTE)
+        return [QUOTE.from_item(item) for item in items]
 
     # oldest first, since event sort keys lead with the timestamp
     def get_history(self, request_id: str) -> list[HistoryEvent]:
-        return [event_schema_for(item).from_item(item) for item in self._query_partition(request_id, HISTORY_EVENT)]
+        items = self._query_partition(DELIVERY_REQUEST.key(request_id=request_id)["pk"], HISTORY_EVENT)
+        return [event_schema_for(item).from_item(item) for item in items]
 
     # newest first. Index reads can't be strongly consistent, so a request may take a
     # moment to appear here after it's logged; get_request always sees it
@@ -182,6 +197,11 @@ class Repository:
 
     def list_jobs_by_state(self, state: JobStateName) -> list[DeliveryJob]:
         return [DELIVERY_JOB.from_item(i) for i in self._query_index(JOBS_BY_STATE, state=state)]
+
+    # earliest first, since slot sort keys lead with the start time
+    def list_slots(self, delivery_staff_id: str) -> list[AvailabilitySlot]:
+        items = self._query_partition(USER.key(user_id=delivery_staff_id)["pk"], AVAILABILITY_SLOT)
+        return [AVAILABILITY_SLOT.from_item(item) for item in items]
 
     def list_delivery_staff(self) -> list[DeliveryStaff]:
         kind = DeliveryStaff.model_fields["kind"].default

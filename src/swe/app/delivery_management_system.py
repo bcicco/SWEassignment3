@@ -5,16 +5,19 @@ from swe.app.commands import (
     AcceptQuote,
     CancelRequest,
     CreateDeliveryJob,
+    DeclareSlot,
     IssueQuote,
     LogRequest,
     RejectQuote,
+    RemoveSlot,
 )
 from swe.app.errors import ForbiddenError
+from swe.app.staff_roster import StaffRoster
 from swe.app.user_directory import UserDirectory
 from swe.domain.job import DeliveryJob
 from swe.domain.request import DeliveryRequest, Quote, QuoteAccepted, QuoteStatus, RequestStatus
 from swe.domain.shared.ids import now
-from swe.domain.user import User
+from swe.domain.user import AvailabilitySlot, User
 from swe.repo import ConflictError, NotFoundError, Repository
 
 # held by SystemConfiguration in the design (A7)
@@ -35,6 +38,7 @@ class DeliveryManagementSystem:
         self,
         repo: Repository | None = None,
         users: UserDirectory | None = None,
+        roster: StaffRoster | None = None,
         quote_valid_for: timedelta = QUOTE_VALID_FOR,
         clock: Callable[[], datetime] = now,
     ):
@@ -42,11 +46,18 @@ class DeliveryManagementSystem:
         self.quote_valid_for = quote_valid_for
         self.clock = clock
         self.users = users or UserDirectory(self.repo)
+        self.roster = roster or StaffRoster(self.repo, self.users, clock)
 
     # the account behind an identity the platform authenticated (A11);
     # NotFoundError if there's none
     def identify(self, user_id: str) -> User:
         return self.users.find(user_id)
+
+    def declare_slot(self, command: DeclareSlot) -> AvailabilitySlot:
+        return self.roster.declare_slot(command)
+
+    def remove_slot(self, command: RemoveSlot) -> AvailabilitySlot:
+        return self.roster.remove_slot(command)
 
     def log_request(self, command: LogRequest) -> DeliveryRequest:
         request, logged = DeliveryRequest.log(**command.model_dump(), created_at=self.clock())
