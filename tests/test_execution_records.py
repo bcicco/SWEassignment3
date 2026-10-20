@@ -19,18 +19,33 @@ def outcome(**changes):
 
 
 def attempt(**changes):
-    return DeliveryAttempt.model_validate({
-        "id": "attempt-1", "job_id": "job-1", "delivery_staff_id": "driver-1",
-        "allocation_id": "allocation-1", "recorded_at": T, "outcome": outcome(),
-    } | changes)
+    return DeliveryAttempt.model_validate(
+        {
+            "id": "attempt-1",
+            "job_id": "job-1",
+            "delivery_staff_id": "driver-1",
+            "allocation_id": "allocation-1",
+            "recorded_at": T,
+            "outcome": outcome(),
+        }
+        | changes
+    )
 
 
 def review(**changes):
-    return IssueReview.model_validate({
-        "id": "review-1", "job_id": "job-1", "issue_id": "issue-1", "reviewed_by": "staff-1",
-        "reviewed_at": T, "notes": "Contacted the customer", "issue_addressed": False,
-        "parcels_with_driver": False,
-    } | changes)
+    return IssueReview.model_validate(
+        {
+            "id": "review-1",
+            "job_id": "job-1",
+            "issue_id": "issue-1",
+            "reviewed_by": "staff-1",
+            "reviewed_at": T,
+            "notes": "Contacted the customer",
+            "issue_addressed": False,
+            "parcels_with_driver": False,
+        }
+        | changes
+    )
 
 
 def proof(**changes):
@@ -57,19 +72,31 @@ def test_failure_creates_a_separate_immutable_issue():
     assert failed.outcome.succeeded is False
 
 
-@pytest.mark.parametrize("changes", [
-    {"failure_reason": "Unexpected"}, {"proof": {"recipient_name": "Sam", "handover_at": T}},
-    {"all_parcels_handed_over": True}, {"succeeded": "true"}, {"kind": "unknown"},
-    {"occurred_at": "not-a-date"}, {"occurred_at": T.replace(tzinfo=None)},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"failure_reason": "Unexpected"},
+        {"proof": {"recipient_name": "Sam", "handover_at": T}},
+        {"all_parcels_handed_over": True},
+        {"succeeded": "true"},
+        {"kind": "unknown"},
+        {"occurred_at": "not-a-date"},
+        {"occurred_at": T.replace(tzinfo=None)},
+    ],
+)
 def test_invalid_pickup_input_is_rejected(changes):
     with pytest.raises(ValidationError):
         outcome(**changes)
 
 
-@pytest.mark.parametrize("changes", [
-    {}, {"all_parcels_handed_over": True}, {"proof": {"recipient_name": "Sam", "handover_at": T}},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {},
+        {"all_parcels_handed_over": True},
+        {"proof": {"recipient_name": "Sam", "handover_at": T}},
+    ],
+)
 def test_incomplete_delivery_is_not_successful(changes):
     with pytest.raises(ValidationError):
         outcome(kind="delivery", **changes)
@@ -82,10 +109,15 @@ def test_successful_delivery_retains_valid_proof():
         delivered.proof.recipient_name = "Changed"
 
 
-@pytest.mark.parametrize("changes", [
-    {"recipient_name": " "}, {"signature_ref": " "}, {"photo_ref": " "},
-    {"handover_at": T.replace(tzinfo=None)},
-])
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"recipient_name": " "},
+        {"signature_ref": " "},
+        {"photo_ref": " "},
+        {"handover_at": T.replace(tzinfo=None)},
+    ],
+)
 def test_invalid_proof_is_rejected(changes):
     with pytest.raises(ValidationError):
         proof(**changes)
@@ -143,9 +175,14 @@ def test_returned_parcels_require_a_new_collection_window():
     assert approved.collection_window[0] == T
 
 
-@pytest.mark.parametrize("window", [
-    (T, T), (T + timedelta(hours=1), T), (T - timedelta(hours=1), T + timedelta(hours=1)),
-])
+@pytest.mark.parametrize(
+    "window",
+    [
+        (T, T),
+        (T + timedelta(hours=1), T),
+        (T - timedelta(hours=1), T + timedelta(hours=1)),
+    ],
+)
 def test_invalid_reattempt_window_is_rejected(window):
     with pytest.raises(ValidationError):
         review(issue_addressed=True, collection_window=window)
