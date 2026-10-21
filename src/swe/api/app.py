@@ -1,38 +1,46 @@
 # Commands go through DeliveryManagementSystem, which enforces the business rules; reads
 # go straight to the repository. Run with:
 #   uv run uvicorn swe.api:create_app --factory --reload
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from swe.api.identity import CurrentUser, Customer, Driver, Staff, is_customer, is_driver
 from swe.api.models import (
     JobDetail,
     JobSummary,
+    NewAdjustment,
     NewAllocation,
+    NewPayment,
     NewQuote,
     NewReallocation,
     NewRequest,
     NewSlot,
+    PaymentDetail,
     RequestDetail,
 )
 from swe.app import (
     AcceptQuote,
+    AdjustPayment,
     AllocateJob,
     CancelRequest,
     Candidate,
+    CloseJob,
+    CollectionTotals,
     DeclareSlot,
     DeliveryManagementSystem,
     ForbiddenError,
     IssueQuote,
     LogRequest,
     ReallocateJob,
+    RecordPayment,
     RejectQuote,
     RemoveSlot,
 )
-from swe.domain.job import Allocation, DeliveryJob, JobStateName
+from swe.domain.job import Allocation, DeliveryJob, JobStateName, Payment, PaymentAdjustment
 from swe.domain.request import DeliveryRequest, Quote, QuoteAccepted, RequestStatus
 from swe.domain.user import AvailabilitySlot, DeliveryStaff
 from swe.repo import ConflictError, NotFoundError
@@ -49,6 +57,17 @@ ERROR_STATUSES = [
 ]
 
 
+# pydantic's message lists every failed rule with the whole input; the user only needs
+# the rules, e.g. "a reason is required when less than the amount due is collected"
+def describe(exc: Exception) -> str:
+    if not isinstance(exc, ValidationError):
+        return str(exc)
+    return "; ".join(
+        ": ".join(filter(None, [".".join(map(str, e["loc"])), e["msg"].removeprefix("Value error, ")]))
+        for e in exc.errors()
+    )
+
+
 def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
     dms = dms or DeliveryManagementSystem()
     repo = dms.repo
@@ -59,7 +78,7 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
     for error, code in ERROR_STATUSES:
 
         def handle(request: Request, exc: Exception, code: int = code) -> JSONResponse:
-            return JSONResponse(status_code=code, content={"detail": str(exc)})
+            return JSONResponse(status_code=code, content={"detail": describe(exc)})
 
         app.add_exception_handler(error, handle)
 
@@ -182,5 +201,39 @@ def create_app(dms: DeliveryManagementSystem | None = None) -> FastAPI:
     def reallocate_job(job_id: str, body: NewReallocation, user: Staff) -> Allocation:
         command = ReallocateJob(job_id=job_id, **body.model_dump(), by=user.user_id)
         return dms.reallocate_job(command)
+
+    # Task 7: what the job owes and every payment and adjustment towards it
+    @app.get("/jobs/{job_id}/payments")
+    def job_payments(job_id: str, user: CurrentUser) -> PaymentDetail:
+        job = visible_job(job_id, user)
+        return PaymentDetail(
+            settlement=dms.settlement(job),
+            payments=repo.list_payments(job_id),
+            adjustments=repo.list_adjustments(job_id),
+        )
+
+    # the allocated driver at collection; the façade checks it's their job
+    @app.post("/jobs/{job_id}/payments", status_code=status.HTTP_201_CREATED)
+    def record_payment(job_id: str, body: NewPayment, user: Driver) -> Payment:
+        return dms.record_payment(RecordPayment(job_id=job_id, **body.model_dump(), by=user.user_id))
+
+    @app.post("/jobs/{job_id}/payments/{payment_id}/adjustments", status_code=status.HTTP_201_CREATED)
+    def adjust_payment(job_id: str, payment_id: str, body: NewAdjustment, user: Staff) -> PaymentAdjustment:
+        command = AdjustPayment(job_id=job_id, payment_id=payment_id, **body.model_dump(), by=user.user_id)
+        return dms.adjust_payment(command)
+
+    @app.post("/jobs/{job_id}/close")
+    def close_job(job_id: str, user: Staff) -> DeliveryJob:
+        return dms.close_job(CloseJob(job_id=job_id, by=user.user_id))
+
+    # Task 7 variant 5a: office staff see anyone's daily totals, drivers only their own
+    @app.get("/collections")
+    def collections(user: CurrentUser, day: date, staff_id: str | None = None) -> CollectionTotals:
+        if is_customer(user):
+            raise ForbiddenError("only staff can see collection totals")
+        staff_id = staff_id or user.user_id
+        if is_driver(user) and staff_id != user.user_id:
+            raise ForbiddenError("drivers can only see their own collections")
+        return dms.collection_totals(staff_id, day)
 
     return app
