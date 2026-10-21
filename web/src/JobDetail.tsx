@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { api, type Candidate, type JobDetail as Detail, type User } from "./api";
 import { ExecutionPanel } from "./ExecutionPanel";
+import { PaymentPanel } from "./PaymentPanel";
 import { label, when, windowOf } from "./format";
 import { usePolled } from "./usePolled";
 
@@ -71,6 +72,8 @@ export function JobDetail({ user, jobId, run }: { user: User; jobId: string; run
           </div>
         </div>
       </div>
+
+      {job.state !== "unallocated" && <PaymentPanel key={`pay-${job.job_id}-${user.id}`} user={user} job={job} run={run} onChanged={refresh} />}
 
       <ExecutionPanel key={`${job.job_id}-${user.id}`} user={user} jobId={job.job_id} run={run} onChanged={refresh} />
 

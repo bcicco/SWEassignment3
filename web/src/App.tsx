@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError, type DeliveryRequest, type JobState, type JobSummary, type RequestStatus, type Role, type User } from "./api";
 import { Availability } from "./Availability";
+import { Collections } from "./Collections";
 import { label, shortId, when } from "./format";
 import { JobDetail } from "./JobDetail";
 import { RequestDetail } from "./RequestDetail";
@@ -14,11 +15,15 @@ function useActingAs(): [User, (user: User) => void] {
   return [user, setUser];
 }
 
-type Tab = "requests" | "jobs" | "availability";
+type Tab = "requests" | "jobs" | "availability" | "collections";
 
-const TAB_LABELS: Record<Tab, string> = { requests: "Delivery requests", jobs: "Delivery jobs", availability: "Availability" };
+const TAB_LABELS: Record<Tab, string> = { requests: "Requests", jobs: "Jobs", availability: "Availability", collections: "Collections" };
 // drivers work from the jobs allocated to them and never see requests
-const TABS: Record<Role, Tab[]> = { customer: ["requests", "jobs"], staff: ["requests", "jobs"], driver: ["jobs", "availability"] };
+const TABS: Record<Role, Tab[]> = {
+  customer: ["requests", "jobs"],
+  staff: ["requests", "jobs", "collections"],
+  driver: ["jobs", "availability", "collections"],
+};
 const ACCOUNTS: Record<Role, string> = { customer: "cust-1", staff: "staff-1", driver: "driver-1" };
 
 // accepted requests are listed as jobs instead
@@ -121,6 +126,8 @@ export default function App() {
           </nav>
           {tab === "availability" ? (
             <p className="muted">Declare the times you can work. Office staff allocate jobs whose pickup window falls inside one of your slots.</p>
+          ) : tab === "collections" ? (
+            <p className="muted">The cash and card a staff member collected on one day, to reconcile against the cash handed in and the card provider's settlement.</p>
           ) : tab === "requests" ? (
             <>
               <nav className="filters">
@@ -186,6 +193,8 @@ export default function App() {
         <section>
           {tab === "availability" ? (
             <Availability key={user.id} user={user} run={run} />
+          ) : tab === "collections" ? (
+            <Collections key={user.id} user={user} />
           ) : creating ? (
             <RequestForm
               role={user.role}

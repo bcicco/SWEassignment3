@@ -5,6 +5,9 @@ export const windowOf = ([start, end]: [string, string]) => `${when(start)} – 
 
 export const label = (value: string) => value.replace(/_/g, " ");
 
+// AUD, e.g. "$45.00" or "-$5.00"
+export const money = (value: string | number) => `${Number(value) < 0 ? "-" : ""}$${Math.abs(Number(value)).toFixed(2)}`;
+
 export const shortId = (id: string) => id.slice(0, 8);
 
 // a datetime-local input's value `hours` from now, on the hour
