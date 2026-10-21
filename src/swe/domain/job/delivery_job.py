@@ -1,9 +1,11 @@
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from swe.domain.job.allocation import Allocation
-from swe.domain.job.events import JobAllocated, JobCreated
+from swe.domain.job.events import JobAllocated, JobClosed, JobCreated, PaymentAdjusted, PaymentRecorded
+from swe.domain.job.payment import Payment, PaymentAdjustment, PaymentMethod, PaymentOutcome, Settlement
 from swe.domain.job.state import JobState, JobStateName
 from swe.domain.shared.errors import DomainError
 from swe.domain.shared.ids import new_id, now
@@ -55,6 +57,95 @@ class DeliveryJob(BaseModel):
         if delivery_staff_id == self.delivery_staff_id:
             raise DomainError(f"job is already allocated to {delivery_staff_id}")
         return self._assign(successor, delivery_staff_id, by, reason=reason, at=at)
+
+    # Task 7 subtasks 1-4 (A2 Figure 7.4b). The current state decides whether money can be
+    # taken at this stage, Payment checks the outcome against what's due, and Settlement
+    # adds it to what's been collected
+    def record_payment(
+        self,
+        settlement: Settlement,
+        *,
+        payment_id: str,
+        outcome: PaymentOutcome,
+        method: PaymentMethod | None,
+        amount: Decimal,
+        reason: str | None,
+        by: str,
+        at: datetime,
+    ) -> tuple[Payment, PaymentRecorded]:
+        self.enter(self.current_state.record_payment())
+        payment = Payment(
+            id=payment_id,
+            job_id=self.job_id,
+            quote_id=self.quote_id,
+            outcome=outcome,
+            method=method,
+            amount_due=settlement.due(),
+            amount=amount,
+            reason=reason,
+            created_by=by,
+            created_at=at,
+        )
+        settlement.apply_payment(payment)
+        return payment, PaymentRecorded(
+            request_id=self.request_id,
+            job_id=self.job_id,
+            payment_id=payment.id,
+            outcome=payment.outcome,
+            method=payment.method,
+            amount=payment.amount,
+            amount_due=payment.amount_due,
+            outstanding=settlement.outstanding,
+            created_by=by,
+            created_at=at,
+        )
+
+    # Task 7 variant 4a (A2 Figure 7.4c): office staff correct or top up a Payment, which
+    # itself is never changed
+    def adjust_payment(
+        self,
+        settlement: Settlement,
+        payment: Payment,
+        *,
+        adjustment_id: str,
+        amount: Decimal,
+        method: PaymentMethod,
+        provider_reference: str | None,
+        reason: str,
+        by: str,
+        at: datetime,
+    ) -> tuple[PaymentAdjustment, PaymentAdjusted]:
+        self.enter(self.current_state.record_payment())
+        if payment.job_id != self.job_id:
+            raise DomainError("that payment belongs to another job")
+        adjustment = PaymentAdjustment(
+            id=adjustment_id,
+            job_id=self.job_id,
+            payment_id=payment.id,
+            amount=amount,
+            method=method,
+            provider_reference=provider_reference,
+            reason=reason,
+            created_by=by,
+            created_at=at,
+        )
+        settlement.apply_adjustment(adjustment)
+        return adjustment, PaymentAdjusted(
+            request_id=self.request_id,
+            job_id=self.job_id,
+            adjustment_id=adjustment.id,
+            payment_id=payment.id,
+            amount=adjustment.amount,
+            method=adjustment.method,
+            outstanding=settlement.outstanding,
+            created_by=by,
+            created_at=at,
+        )
+
+    # only a Delivered job whose payment is resolved and has no open issue closes (A18)
+    def close(self, settlement: Settlement, *, issue_open: bool, by: str, at: datetime) -> JobClosed:
+        self.enter(self.current_state.close(payment_resolved=settlement.resolved, issue_open=issue_open))
+        return JobClosed(request_id=self.request_id, job_id=self.job_id, created_by=by, created_at=at)
 
     def _assign(
         self, successor: JobState, delivery_staff_id: str, by: str, reason: str | None, at: datetime | None

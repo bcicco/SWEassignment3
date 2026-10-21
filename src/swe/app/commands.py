@@ -2,10 +2,15 @@
 # handled by the matching DeliveryManagementSystem method
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from swe.domain.job import PaymentMethod, PaymentOutcome
 from swe.domain.shared import Address, Parcel
+
+# chosen by the client, so a retried submission is recognised instead of recorded twice
+SubmissionId = Annotated[str, Field(pattern=r"^[A-Za-z0-9_-]{8,80}$")]
 
 
 class Command(BaseModel):
@@ -86,4 +91,33 @@ class ReallocateJob(Command):
     job_id: str
     delivery_staff_id: str
     reason: str = Field(min_length=1)
+    by: str
+
+
+# Task 7: the allocated driver records what happened when collecting payment
+class RecordPayment(Command):
+    job_id: str
+    payment_id: SubmissionId
+    outcome: PaymentOutcome
+    method: PaymentMethod | None = None
+    amount: Decimal
+    reason: str | None = None
+    by: str
+
+
+# Task 7 variant 4a: office staff correct a payment or record a late balance
+class AdjustPayment(Command):
+    job_id: str
+    payment_id: str
+    adjustment_id: SubmissionId
+    amount: Decimal
+    method: PaymentMethod
+    provider_reference: str | None = None
+    reason: str
+    by: str
+
+
+# office staff confirm a delivered, paid job is finished (A18)
+class CloseJob(Command):
+    job_id: str
     by: str

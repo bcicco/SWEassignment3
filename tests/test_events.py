@@ -139,8 +139,10 @@ def test_routes_declare_event_types():
         "request_logged",
         "job_created",
         "quote_rejected",
+        "payment_recorded",
+        "payment_adjusted",
     ]
-    assert ROUTES["notify-customer"].event_types == ["quote_issued", "request_cancelled"]
+    assert ROUTES["notify-customer"].event_types == ["quote_issued", "request_cancelled", "job_closed"]
     assert ROUTES["audit"].event_types is None
 
 

@@ -95,6 +95,43 @@ export type NewRequest = {
   dropoff_address: Address;
 };
 
+// Task 7. Money is in AUD, sent and received as decimal strings
+export type PaymentMethod = "cash" | "card";
+export type PaymentOutcome = "collected" | "declined" | "refused";
+// one collection attempt by the driver in created_by; never edited
+export type Payment = {
+  id: string;
+  created_at: string;
+  created_by: string | null;
+  job_id: string;
+  quote_id: string;
+  outcome: PaymentOutcome;
+  method: PaymentMethod | null;
+  amount_due: string;
+  amount: string;
+  reason: string | null;
+  variance: string; // negative for a shortfall
+};
+// a correction or late balance by the office staff member in created_by
+export type PaymentAdjustment = {
+  id: string;
+  created_at: string;
+  created_by: string | null;
+  job_id: string;
+  payment_id: string;
+  amount: string;
+  method: PaymentMethod;
+  provider_reference: string | null;
+  reason: string;
+};
+export type Settlement = { job_id: string; amount_due: string; net_collected: string; revision: number; outstanding: string; resolved: boolean };
+export type PaymentDetail = { settlement: Settlement; payments: Payment[]; adjustments: PaymentAdjustment[] };
+export type CollectionTotals = { staff_id: string; day: string; cash: string; card: string; payments: Payment[]; adjustments: PaymentAdjustment[] };
+
+// the client picks the id and keeps it for a retry, so a lost confirmation can't record twice
+export type NewPayment = { payment_id: string; outcome: PaymentOutcome; method: PaymentMethod | null; amount: string; reason?: string };
+export type NewAdjustment = { adjustment_id: string; amount: string; method: PaymentMethod; provider_reference?: string; reason: string };
+
 export type NewQuote = { price: string; eta_pickup: [string, string]; eta_dropoff: [string, string] };
 
 export class ApiError extends Error {
@@ -146,4 +183,11 @@ export const api = (user: User) => ({
   listSlots: () => call<AvailabilitySlot[]>(user, "GET", "/availability"),
   declareSlot: (window: [string, string]) => call<AvailabilitySlot>(user, "POST", "/availability", { window }),
   removeSlot: (id: string) => call<void>(user, "DELETE", `/availability/${id}`),
+  payments: (jobId: string) => call<PaymentDetail>(user, "GET", `/jobs/${jobId}/payments`),
+  recordPayment: (jobId: string, body: NewPayment) => call<Payment>(user, "POST", `/jobs/${jobId}/payments`, body),
+  adjustPayment: (jobId: string, paymentId: string, body: NewAdjustment) =>
+    call<PaymentAdjustment>(user, "POST", `/jobs/${jobId}/payments/${paymentId}/adjustments`, body),
+  closeJob: (jobId: string) => call<DeliveryJob>(user, "POST", `/jobs/${jobId}/close`),
+  collections: (staffId: string, day: string) =>
+    call<CollectionTotals>(user, "GET", `/collections?staff_id=${encodeURIComponent(staffId)}&day=${day}`),
 });
